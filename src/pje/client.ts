@@ -6,6 +6,9 @@ import { log } from "../utils/logger.js";
 import { PjeError } from "../utils/errors.js";
 import { getPjeEnvironment, type Grau } from "./urls.js";
 
+export const AUTH_INSTRUCTIONS =
+  "Autentique manualmente com `npm run auth` no clone local ou `npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth` na instalação via GitHub/npx.";
+
 export interface PjeSession {
   browser: Browser;
   context: BrowserContext;
@@ -23,7 +26,7 @@ export async function hasSavedSession(): Promise<boolean> {
 
 export async function launchSession(grau: Grau, headless = config.headless): Promise<PjeSession> {
   if (!(await hasSavedSession())) {
-    throw new PjeError("SESSION_MISSING", "Sessão PJe não encontrada. Execute npm run auth para autenticação manual.");
+    throw new PjeError("SESSION_MISSING", `Sessão PJe não encontrada. ${AUTH_INSTRUCTIONS}`);
   }
   const env = getPjeEnvironment(grau);
   const browser = await chromium.launch({ headless });
@@ -60,7 +63,7 @@ export async function requireAuthenticated(grau: Grau): Promise<PjeSession> {
   });
   if (!valid) {
     await closeSession(session);
-    throw new PjeError("SESSION_EXPIRED", "Sessão PJe inexistente ou expirada. Execute npm run auth para renovar a autenticação manual.", { grau });
+    throw new PjeError("SESSION_EXPIRED", `Sessão PJe inexistente ou expirada. ${AUTH_INSTRUCTIONS}`, { grau });
   }
   return session;
 }

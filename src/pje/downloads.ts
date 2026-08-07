@@ -28,7 +28,7 @@ export async function baixarDocumento(
   await ensureDirInsideBase(config.downloadDir, path.relative(config.downloadDir, baseDir));
   throw new PjeError(
     "PJE_INTERFACE_CHANGED",
-    "Download autenticado ainda depende de inspeção da interface do PJe para localizar o documento sem inventar seletores.",
+    "Download autenticado ainda depende de inspeção da interface do PJe para localizar o documento sem inventar seletores. Rode `npm run inspect -- <numero-processo>` para mapear a interface autenticada antes de usar esta tool.",
     { grau, documentoId },
   );
 }

@@ -5,13 +5,15 @@
   "main": "dist/server.js",
   "bin": {
     "mcp-pje-trf1": "dist/server.js",
-    "mcp-pje-trf1-auth": "dist/cli/auth.js"
+    "mcp-pje-trf1-auth": "dist/cli/auth.js",
+    "mcp-pje-trf1-inspect": "dist/cli/inspect.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts",
     "auth": "tsx src/cli/auth.ts",
+    "inspect": "tsx src/cli/inspect.ts",
     "prepare": "npm run build",
     "test": "vitest run",
     "lint": "eslint ."

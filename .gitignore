@@ -2,6 +2,9 @@ node_modules/
 dist/
 downloads/
 .pje/
+.pje-inspection/
+inspection/
 .env
 coverage/
 *.log
+AGENTS.md
