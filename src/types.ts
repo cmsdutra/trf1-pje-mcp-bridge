@@ -21,6 +21,8 @@ export interface ProcessoMetadata {
   grau: Grau;
   url?: string;
   identificadorInterno?: string;
+  /** Demais pares rótulo/valor do painel "Mais detalhes" (jurisdição, valor da causa, ...). */
+  detalhes?: Record<string, string>;
 }
 
 export interface DocumentoProcesso {

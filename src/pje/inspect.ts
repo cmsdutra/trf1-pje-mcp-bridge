@@ -31,15 +31,12 @@ interface NetworkCandidate {
 
 const STEPS: CaptureStep[] = [
   {
-    slug: "01-processo",
-    prompt: "Navegue até a consulta de processo autenticada e busque o processo informado. Pressione Enter quando a página do processo estiver carregada.",
+    slug: "01-processo-autos-digitais",
+    prompt:
+      "Busque e abra o processo informado (clique em \"Abrir processo\", não apenas digite o número). No PJe, abrir o processo já exibe os autos digitais/lista de documentos. Pressione Enter quando a página do processo com a lista de documentos estiver totalmente carregada.",
   },
   {
-    slug: "02-documentos",
-    prompt: "Localize e abra a listagem/árvore de documentos do processo. Pressione Enter quando estiver visível.",
-  },
-  {
-    slug: "03-download",
+    slug: "02-download",
     prompt: "Clique para abrir/baixar um documento qualquer da lista. Pressione Enter após o documento abrir ou o download iniciar.",
   },
 ];
@@ -55,39 +52,49 @@ function isInterestingContentType(contentType: string | undefined): boolean {
 /**
  * `page.content()`/`frame.content()` só serializam o DOM "claro" — elementos anexados a um
  * shadow root (comum em web components de viewers modernos) ficam de fora mesmo estando
- * visíveis na tela. Este serializer roda dentro da página e percorre shadow roots manualmente,
+ * visíveis na tela. Este script roda dentro da página e percorre shadow roots manualmente,
  * marcando as bordas com comentários, para que o dump em disco reflita o que aparece no screenshot.
+ *
+ * É passado para `page.evaluate`/`frame.evaluate` como STRING (não como referência de função):
+ * quando rodado via `tsx`/esbuild, uma função TS transformada pode ganhar uma chamada auxiliar
+ * `__name(...)` injetada no corpo; o Playwright serializa a função via `.toString()` para rodar
+ * no navegador, onde esse helper não existe, e isso quebra com `ReferenceError: __name is not
+ * defined`. Uma string literal nunca passa por esse transform, então fica imune ao problema.
  */
-function serializeIncludingShadowDom(): string {
-  function serializeNode(node: Node): string {
-    let html = "";
-    node.childNodes.forEach((child) => {
+const SHADOW_DOM_SERIALIZER_SOURCE = `
+(function () {
+  function serializeNode(node) {
+    var html = '';
+    node.childNodes.forEach(function (child) {
       if (child.nodeType === Node.ELEMENT_NODE) {
-        const el = child as Element;
-        const tag = el.tagName.toLowerCase();
-        const attrs = Array.from(el.attributes)
-          .map((a) => ` ${a.name}="${a.value.replace(/"/g, "&quot;")}"`)
-          .join("");
-        html += `<${tag}${attrs}>`;
-        const shadowRoot = (el as HTMLElement).shadowRoot;
+        var el = child;
+        var tag = el.tagName.toLowerCase();
+        var attrs = Array.from(el.attributes)
+          .map(function (a) {
+            return ' ' + a.name + '="' + a.value.replace(/"/g, '&quot;') + '"';
+          })
+          .join('');
+        html += '<' + tag + attrs + '>';
+        var shadowRoot = el.shadowRoot;
         if (shadowRoot) {
-          html += `<!--shadow-root-start-->${serializeNode(shadowRoot)}<!--shadow-root-end-->`;
+          html += '<!--shadow-root-start-->' + serializeNode(shadowRoot) + '<!--shadow-root-end-->';
         }
         html += serializeNode(el);
-        html += `</${tag}>`;
+        html += '</' + tag + '>';
       } else if (child.nodeType === Node.TEXT_NODE) {
-        html += child.textContent ?? "";
+        html += child.textContent || '';
       } else if (child.nodeType === Node.COMMENT_NODE) {
-        html += `<!--${child.textContent ?? ""}-->`;
+        html += '<!--' + (child.textContent || '') + '-->';
       }
     });
     return html;
   }
-  return `<!doctype html>\n<html>${serializeNode(document.documentElement)}</html>`;
-}
+  return '<!doctype html>\\n<html>' + serializeNode(document.documentElement) + '</html>';
+})()
+`;
 
 async function captureFrameOrPage(target: Page | Frame, outputPath: string): Promise<void> {
-  const html = await target.evaluate(serializeIncludingShadowDom);
+  const html = await target.evaluate<string>(SHADOW_DOM_SERIALIZER_SOURCE);
   await fs.writeFile(outputPath, html, "utf8");
 }
 

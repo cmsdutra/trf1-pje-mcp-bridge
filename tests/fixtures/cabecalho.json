@@ -1,0 +1,31 @@
+{
+  "titulo": "ProceComCiv 0000000-00.0000.0.00.0000",
+  "detalhes": [
+    { "rotulo": "Classe judicial", "valor": "PROCEDIMENTO COMUM CÍVEL (7)" },
+    { "rotulo": "Assunto", "valor": "DIREITO CIVIL (000) / Assunto de Teste (111)" },
+    { "rotulo": "Jurisdição", "valor": "Seção Judiciária de Teste" },
+    { "rotulo": "Autuação", "valor": "15 jul. 2026" },
+    { "rotulo": "Última distribuição", "valor": "16 jul. 2026" },
+    { "rotulo": "Valor da causa", "valor": "R$ 1.000,00" },
+    { "rotulo": "Segredo de justiça?", "valor": "NÃO" },
+    { "rotulo": "Órgão julgador", "valor": "1ª Vara Federal Cível de Teste" },
+    { "rotulo": "Cargo judicial", "valor": "Juiz Federal Substituto" },
+    { "rotulo": "Contato Órgão julgador", "valor": "" }
+  ],
+  "poloAtivo": [
+    {
+      "texto": "PARTE AUTORA DE TESTE - CPF: 000.000.000-00 (AUTOR)",
+      "representantes": ["ADVOGADA DE TESTE - CPF: 111.111.111-11 (ADVOGADO)"]
+    }
+  ],
+  "poloPassivo": [
+    {
+      "texto": "EMPRESA DE TESTE - FILIAL - CNPJ: 00.000.000/0001-00 (REU)",
+      "representantes": ["Advocacia da Empresa de Teste"]
+    },
+    {
+      "texto": "SEGUNDA PARTE RE DE TESTE (REU)",
+      "representantes": []
+    }
+  ]
+}

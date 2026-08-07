@@ -2,7 +2,7 @@
 
 Servidor MCP local, em TypeScript, para automação legítima do PJe do TRF1 por usuários autenticados. O servidor usa Node.js, `@modelcontextprotocol/sdk`, Playwright, Chromium e transporte MCP via `stdio`.
 
-Esta primeira versão implementa a infraestrutura segura de sessão, filesystem, MCP, logging, validação CNJ, manifesto de downloads e testes. A navegação interna autenticada de processos e documentos está isolada atrás de erro estruturado até que a interface autenticada do PJe seja inspecionada com uma sessão real. Isso evita inventar seletores, endpoints ou comportamento da aplicação.
+O servidor implementa a infraestrutura segura de sessão, filesystem, MCP, logging, validação CNJ, manifesto de downloads e testes, além da navegação autenticada real de processos e documentos (consulta de metadados, listagem da timeline dos autos digitais e download de documentos). Os seletores e endpoints da área autenticada foram mapeados por inspeção com sessão real — nada foi inventado; ver "Interface autenticada mapeada".
 
 ## Arquitetura
 
@@ -11,14 +11,19 @@ src/
 ├── server.ts
 ├── config.ts
 ├── types.ts
-├── cli/auth.ts
+├── cli/
+│   ├── auth.ts
+│   └── inspect.ts
 ├── pje/
 │   ├── client.ts
 │   ├── auth.ts
 │   ├── urls.ts
+│   ├── autos.ts          # navegação + extração do DOM dos autos digitais (Playwright)
+│   ├── autos-parse.ts    # parsing puro dos dados extraídos (sem Playwright, testável)
 │   ├── process.ts
 │   ├── documents.ts
 │   ├── downloads.ts
+│   ├── inspect.ts
 │   └── selectors.ts
 ├── utils/
 │   ├── cnj.ts
@@ -124,11 +129,59 @@ npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth
 npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth 2
 ```
 
-## Mapeamento da interface autenticada
+## Interface autenticada mapeada
 
-`consultar_processo`, `listar_documentos` e `baixar_inteiro_teor`/`baixar_documento` dependem de seletores da área
-autenticada do PJe que ainda não foram mapeados (ver `PJE_INTERFACE_CHANGED` em Troubleshooting). Como esse
-mapeamento exige login humano real com um processo de verdade, use a ferramenta de inspeção após autenticar:
+`consultar_processo`, `listar_documentos` e `baixar_inteiro_teor`/`baixar_documento` operam sobre a tela de **autos
+digitais** (`Processo/ConsultaProcesso/Detalhe/listAutosDigitais.seam`), uma página JSF/RichFaces server-rendered.
+Ela é uma superfície distinta do painel do usuário interno — este último é uma SPA Angular servida num iframe
+cross-origin e não é usada por nenhuma das tools.
+
+O fluxo implementado (`src/pje/autos.ts`) é:
+
+1. `GET <baseUrl>/seam/resource/rest/pje-legacy/processo/<numeroCnj>/enderecoAutos` devolve, em texto puro, a URL
+   dos autos digitais já com o `idProcesso` interno e o token de navegação `ca`. É o mesmo endpoint que a caixa
+   "Acesso rápido" do menu lateral do PJe chama ao pressionar Enter, então basta o cookie de sessão — não é
+   preciso reproduzir o popup de busca rápida.
+2. Navegação para essa URL e leitura do cabeçalho (`#maisDetalhes`, `#poloAtivo`, `#poloPassivo`) e da timeline
+   (`#divTimeLine`). A timeline usa rolagem infinita: as páginas restantes são carregadas via `novaPagina()` até
+   `#paginaAtual` alcançar `#totalPaginas`.
+3. Download por HTTP direto em `<baseUrl>/seam/resource/rest/pje-legacy/documento/download/<idProcessoDocumento>`
+   (a mesma URL que o visualizador do PJe usa como `src` do iframe), com fallback para a variante
+   `.../download/<TRIBUNAL>/<grau>g/<idProcesso>/<id>` usada pelo botão "abrir em outra aba".
+
+### Armadilhas confirmadas contra o PJe real
+
+Todas custaram uma rodada de depuração; estão codificadas na implementação e não devem ser "simplificadas":
+
+- **O número tem de ir com máscara** (`0000000-00.0000.0.00.0000`) no `enderecoAutos`. A forma só-dígitos, embora
+  aceita pelo regex do JavaScript da própria tela do PJe, faz o endpoint responder `204 No Content`.
+- **`204 No Content` é o "não encontrei"** desse endpoint (não 404). Ele também aparece de forma transitória, daí
+  a retentativa única antes de concluir `PROCESS_NOT_FOUND`.
+- **A URL precisa terminar com `&aba=`.** O endpoint devolve sem esse parâmetro, mas o navegador real sempre acaba
+  com ele; navegar sem `aba=` joga o Seam em `error.seam` de forma intermitente.
+- **A abertura dos autos falha esporadicamente mesmo assim** (`error.seam?cid=...`), por instabilidade do Seam.
+  `abrirAutosDigitais` tenta duas vezes, resolvendo um `ca` novo — observado corrigindo a falha em execução real.
+- **`listAutosDigitais.seam` abre uma conversação do Seam**: não navegue para ela duas vezes na mesma aba. Por
+  isso `baixarInteiroTeor` abre os autos uma única vez e tira cabeçalho e timeline da mesma página.
+- **O desempenho do PJe oscila muito.** O mesmo lote de 14 documentos levou 12s numa execução e mais de 160s em
+  outra, com um PDF de ~1 MB estourando o timeout. Downloads são retentados até 3 vezes em erro de rede ou 5xx.
+
+Notas de implementação relevantes para quem for mexer nisso:
+
+- Documentos redigidos no editor do PJe são devolvidos como **HTML**; só os anexos costumam ser PDF. A extensão do
+  arquivo gravado vem do `content-type` da resposta, não de uma suposição. (No processo usado como teste: 6 peças
+  em `text/html`, 8 anexos em `application/pdf`.)
+- IDs gerados pelo JSF (`j_id...`) mudam a cada build da aplicação e **não** são usados como seletores.
+- Não existe mais uma flag `authenticatedSelectors.inspected`. O sinal de "a interface mudou" é a ausência, em
+  tempo de execução, dos elementos esperados — o que também cobre mudanças futuras do PJe.
+- O token `ca` é removido da URL antes de ela ir para `ProcessoMetadata.url`/`manifest.json`, para não vazar
+  credencial de sessão em arquivo exportado.
+- Uma falha ao paginar a timeline aborta com `PJE_INTERFACE_CHANGED` em vez de devolver lista parcial: uma
+  listagem incompleta de documentos de um processo judicial é pior do que um erro explícito.
+
+### Reinspecionar após mudança do PJe
+
+Se a interface mudar, recapture os artefatos com sessão real e reveja `src/pje/selectors.ts`:
 
 ```bash
 npm run inspect -- 0000000-00.0000.4.01.0000
@@ -141,9 +194,10 @@ Em instalação direta via GitHub/npx:
 npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-inspect 0000000-00.0000.4.01.0000
 ```
 
-O comando abre Chromium visível com a sessão salva, pausa em três pontos (consulta do processo, listagem de
-documentos e abertura/download de um documento) aguardando você navegar manualmente, e grava HTML, screenshots e
-metadados de rede em `<PJE_STORAGE_STATE_PATH.../>inspection/<timestamp>/` (fora do repositório por padrão).
+O comando abre Chromium visível com a sessão salva, pausa em dois pontos (abertura do processo — que no PJe já
+mostra os autos digitais/lista de documentos — e abertura/download de um documento) aguardando você navegar
+manualmente, e grava HTML, screenshots e metadados de rede em `<PJE_STORAGE_STATE_PATH.../>inspection/<timestamp>/`
+(fora do repositório por padrão).
 
 **Atenção**: os arquivos capturados contêm dados reais do processo consultado (partes, documentos). Use apenas
 processos aos quais sua conta PJe tenha acesso legítimo, e não commite nem compartilhe os arquivos gerados sem
@@ -161,25 +215,33 @@ O servidor MCP usa `stdio`.
 
 - `status_autenticacao`: informa se há sessão salva, se parece válida, grau verificado e se precisa de nova autenticação.
 - `autenticar`: abre Chromium visível para autenticação manual. Para uso operacional, prefira `npm run auth`.
-- `consultar_processo`: valida número CNJ, verifica sessão autenticada e consulta metadados disponíveis. A navegação autenticada depende de inspeção final da interface.
-- `listar_documentos`: valida número CNJ, verifica sessão autenticada e lista documentos acessíveis. A árvore/lista autenticada depende de inspeção final da interface.
-- `baixar_documento`: valida entrada, protege diretório de destino e baixa documento acessível. A etapa de acionamento do download depende de inspeção final da interface.
-- `baixar_inteiro_teor`: cria diretório exclusivo, lista documentos, tenta baixar cada item sem abortar o lote e gera `manifest.json`. Depende das rotinas autenticadas acima.
+- `consultar_processo`: valida número CNJ, abre os autos digitais e devolve classe, assunto, órgão julgador, partes e representantes, data de distribuição, `idProcesso` interno e os demais detalhes do cabeçalho.
+- `listar_documentos`: valida número CNJ, carrega a timeline completa dos autos digitais e devolve os documentos em ordem cronológica (movimentos sem documento anexado são descartados; anexos vêm junto do documento principal).
+- `baixar_documento`: valida entrada, protege o diretório de destino e baixa um documento pelo `documento_id` (o `idProcessoDocumento` devolvido por `listar_documentos`).
+- `baixar_inteiro_teor`: cria diretório exclusivo, lista documentos, baixa cada item sem abortar o lote e gera `manifest.json`. Usa **uma única sessão de navegador** para todo o processo.
 
 ## Downloads
 
-Estrutura prevista:
+Estrutura gerada por `baixar_inteiro_teor`:
 
 ```text
 downloads/
 └── 0000000-00.0000.4.01.0000/
     ├── manifest.json
-    ├── 001_peticao_inicial.pdf
-    ├── 002_documento.pdf
-    └── 003_decisao.pdf
+    ├── 001_peticao_inicial.html
+    ├── 002_procuracao_(2_procuracao).pdf
+    ├── 003_documento_de_identificacao_(6_rg).pdf
+    └── 004_decisao.html
 ```
 
-O `manifest.json` contém número do processo, grau, data/hora da coleta, URL de origem, metadados do processo, totais e status individual de cada documento.
+O prefixo numérico é a ordem cronológica do documento nos autos. A extensão vem do `content-type` da
+resposta — peças escritas no editor do PJe são `.html` e anexos costumam ser `.pdf` (ver "Interface
+autenticada mapeada").
+
+O `manifest.json` contém número do processo, grau, data/hora da coleta, URL de origem, metadados do processo,
+totais e status individual de cada documento (incluindo `contentType` e `bytes` do que foi gravado). Nada é
+sobrescrito: numa segunda coleta do mesmo processo, o manifesto anterior é preservado e o novo vira
+`manifest-1.json`, e arquivos com nome repetido ganham sufixo `-1`, `-2`, ...
 
 ## Segurança
 
@@ -295,13 +357,39 @@ Inspeção pública com Playwright em 07/08/2026:
 - Consulta pública redireciona para `pje1g-consultapublica.trf1.jus.br` e `pje2g-consultapublica.trf1.jus.br`.
 - Consulta pública usa campo `#fPP\:numProcesso-inputNumeroProcessoDecoration\:numProcesso-inputNumeroProcesso` e botão `#fPP\:searchProcessos`.
 
-A inspeção autenticada de iframes internos, timeline/árvore de documentos, viewer PDF e downloads ainda não foi executada porque requer login humano real. A ferramenta `npm run inspect` (ver "Mapeamento da interface autenticada") automatiza a captura de HTML/screenshots/eventos de rede durante essa navegação manual; falta apenas rodá-la contra um processo real e usar os artefatos capturados para implementar os seletores em `src/pje/selectors.ts`, `src/pje/process.ts`, `src/pje/documents.ts` e `src/pje/downloads.ts`.
+Inspeção autenticada com sessão real em 07/08/2026 (grau 1), origem dos seletores e endpoints hoje implementados:
+
+- A área autenticada tem duas superfícies distintas: o painel do usuário interno (SPA Angular em iframe
+  cross-origin, com shadow DOM) e os autos digitais (`listAutosDigitais.seam`, JSF server-rendered). Só a segunda é
+  usada pelas tools.
+- Nenhuma chamada JSON de API sustenta a tela de autos digitais — a estratégia correta é raspagem do HTML
+  server-rendered, complementada pelos dois endpoints REST legados (`.../processo/<cnj>/enderecoAutos` e
+  `.../documento/download/<id>`).
+- Detalhes de fluxo, seletores e decisões estão em "Interface autenticada mapeada" e em `src/pje/selectors.ts`.
+
+### Validação fim a fim
+
+Em 07/08/2026 as três tools foram executadas contra um processo real do 1º grau, com sessão legítima:
+
+- `consultar_processo`: cabeçalho, 15 campos de detalhe e 7 partes/representantes dos dois polos.
+- `listar_documentos`: 14 documentos (6 principais + 8 anexos) em ordem cronológica correta, apesar de a
+  timeline vir em ordem decrescente no DOM.
+- `baixar_inteiro_teor`: 14/14 baixados, 0 erros, em ~12s. Arquivos íntegros no disco (PDFs com assinatura
+  `%PDF-`), `manifest.json` completo e sem vazar o token `ca` nem o `JSESSIONID`.
+
+As retentativas descritas em "Armadilhas confirmadas" não são teóricas: a de `error.seam` e a de download por
+falha de rede foram observadas salvando execuções reais.
 
 ## Troubleshooting
 
 - `SESSION_MISSING`: autentique com `npm run auth` no clone local ou `npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth` na instalação via GitHub/npx.
 - `SESSION_EXPIRED`: repita a autenticação manual com o mesmo comando usado inicialmente.
-- `PJE_INTERFACE_CHANGED`: a área autenticada ainda precisa ser mapeada (ou a interface do PJe mudou desde o último mapeamento). Rode `npm run inspect -- <numero-processo>` (ver "Mapeamento da interface autenticada") e, na sequência, implemente os seletores capturados.
+- `PJE_INTERFACE_CHANGED`: os elementos esperados não foram encontrados na página — a interface do PJe mudou desde o último mapeamento. Rode `npm run inspect -- <numero-processo>` (ver "Reinspecionar após mudança do PJe") e atualize `src/pje/selectors.ts`/`src/pje/autos.ts` com os artefatos capturados.
+- `PROCESS_NOT_FOUND` / `PROCESS_NOT_ACCESSIBLE`: o processo não existe naquele grau ou a conta autenticada não tem acesso a ele. Confira o número e o grau.
+- `DOCUMENT_NOT_FOUND` / `DOCUMENT_NOT_ACCESSIBLE`: o `documento_id` não existe ou está fora do alcance da sessão. Use um `documento_id` vindo de `listar_documentos`.
+- `DOWNLOAD_FAILED` / `TIMEOUT`: o PJe não respondeu a tempo mesmo após as retentativas automáticas. Costuma ser lentidão momentânea do PJe — repita a chamada. Em `baixar_inteiro_teor` o lote não é abortado: o documento que falhou fica com `status: "erro"` no `manifest.json` e os demais são baixados normalmente.
+- `INVALID_INPUT`: número CNJ malformado/dígito verificador inválido, ou `documento_id` vazio.
+- "O PJe redirecionou a abertura dos autos para uma página de erro": instabilidade do Seam, não mudança de interface. Tente novamente em alguns instantes.
 - Erro de Chromium: execute `npx playwright install chromium`.
 - Downloads fora da raiz configurada são recusados por proteção contra path traversal.
 

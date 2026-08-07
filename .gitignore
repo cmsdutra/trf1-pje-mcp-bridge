@@ -8,3 +8,4 @@ inspection/
 coverage/
 *.log
 AGENTS.md
+__tmp__/
