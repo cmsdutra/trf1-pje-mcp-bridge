@@ -1,8 +1,8 @@
 # mcp-pje-trf1
 
-Servidor MCP local, em TypeScript, para automação legítima do PJe do TRF1 por usuários autenticados. O servidor usa Node.js, `@modelcontextprotocol/sdk`, Playwright, Chromium e transporte MCP via `stdio`.
+Servidor MCP local, em TypeScript, para automação de consulta e download de documentos do PJe do TRF1 por usuários autenticados. O servidor usa Node.js, `@modelcontextprotocol/sdk`, Playwright, Chromium e transporte MCP via `stdio`.
 
-O servidor implementa a infraestrutura segura de sessão, filesystem, MCP, logging, validação CNJ, manifesto de downloads e testes, além da navegação autenticada real de processos e documentos (consulta de metadados, listagem da timeline dos autos digitais e download de documentos). Os seletores e endpoints da área autenticada foram mapeados por inspeção com sessão real — nada foi inventado; ver "Interface autenticada mapeada".
+O servidor implementa a infraestrutura segura de sessão, filesystem, MCP, logging, validação CNJ, manifesto de downloads e testes, além da navegação autenticada real de processos e documentos (consulta de metadados, listagem da timeline dos autos digitais e download de documentos).
 
 ## Arquitetura
 
