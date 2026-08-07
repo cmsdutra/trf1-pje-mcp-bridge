@@ -1,0 +1,51 @@
+{
+  "name": "mcp-pje-trf1",
+  "version": "1.0.0",
+  "description": "Servidor MCP local para automação legítima do PJe TRF1 por usuários autenticados.",
+  "main": "dist/server.js",
+  "bin": {
+    "mcp-pje-trf1": "dist/server.js",
+    "mcp-pje-trf1-auth": "dist/cli/auth.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "auth": "tsx src/cli/auth.ts",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cmsdutra/trf1-pje-mcp-bridge.git"
+  },
+  "keywords": [
+    "mcp",
+    "pje",
+    "trf1",
+    "playwright"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/cmsdutra/trf1-pje-mcp-bridge/issues"
+  },
+  "homepage": "https://github.com/cmsdutra/trf1-pje-mcp-bridge#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "dotenv": "^17.4.2",
+    "playwright": "^1.62.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.2",
+    "eslint": "^10.8.0",
+    "tsx": "^4.23.11",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.66.0",
+    "vitest": "^4.1.10"
+  }
+}
