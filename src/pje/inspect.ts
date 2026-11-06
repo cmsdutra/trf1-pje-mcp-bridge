@@ -95,7 +95,7 @@ const SHADOW_DOM_SERIALIZER_SOURCE = `
 
 async function captureFrameOrPage(target: Page | Frame, outputPath: string): Promise<void> {
   const html = await target.evaluate<string>(SHADOW_DOM_SERIALIZER_SOURCE);
-  await fs.writeFile(outputPath, html, "utf8");
+  await fs.writeFile(outputPath, html, { encoding: "utf8", mode: 0o600 });
 }
 
 async function captureStep(page: Page, outputDir: string, slug: string, files: string[]): Promise<void> {
@@ -108,7 +108,7 @@ async function captureStep(page: Page, outputDir: string, slug: string, files: s
     log("warn", "Falha ao capturar screenshot da inspeção", { slug, error: String(error) });
   });
   const frames = page.frames().map((frame) => ({ url: frame.url(), name: frame.name() }));
-  await fs.writeFile(framesPath, JSON.stringify(frames, null, 2), "utf8");
+  await fs.writeFile(framesPath, JSON.stringify(frames, null, 2), { encoding: "utf8", mode: 0o600 });
   files.push(htmlPath, pngPath, framesPath);
 
   for (const [index, frame] of page.frames().entries()) {
@@ -205,7 +205,7 @@ export async function runAuthenticatedInspection(grau: Grau, numeroProcesso: str
             const networkDir = path.join(outputDir, "network");
             await fs.mkdir(networkDir, { recursive: true, mode: 0o700 });
             const bodyPath = path.join(networkDir, `${String(captureIndex).padStart(3, "0")}.json`);
-            await fs.writeFile(bodyPath, content, "utf8");
+            await fs.writeFile(bodyPath, content, { encoding: "utf8", mode: 0o600 });
             entry.bodyFile = bodyPath;
             files.push(bodyPath);
           })
@@ -235,9 +235,9 @@ export async function runAuthenticatedInspection(grau: Grau, numeroProcesso: str
   await Promise.all(popupCaptures);
   await Promise.all(networkBodyCaptures);
 
-  await fs.writeFile(path.join(outputDir, "download-events.json"), JSON.stringify(downloadEvents, null, 2), "utf8");
-  await fs.writeFile(path.join(outputDir, "network-candidates.json"), JSON.stringify(networkCandidates, null, 2), "utf8");
-  await fs.writeFile(path.join(outputDir, "popups.json"), JSON.stringify(popups, null, 2), "utf8");
+  await fs.writeFile(path.join(outputDir, "download-events.json"), JSON.stringify(downloadEvents, null, 2), { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(path.join(outputDir, "network-candidates.json"), JSON.stringify(networkCandidates, null, 2), { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(path.join(outputDir, "popups.json"), JSON.stringify(popups, null, 2), { encoding: "utf8", mode: 0o600 });
   files.push(
     path.join(outputDir, "download-events.json"),
     path.join(outputDir, "network-candidates.json"),
