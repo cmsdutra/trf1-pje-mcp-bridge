@@ -23,14 +23,14 @@ jobs:
     name: Qualidade (tsc, lint, testes)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - run: npm ci --ignore-scripts
       - run: npx tsc -p tsconfig.json --noEmit
       - run: npm run lint
       - run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=reports/junit.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: test-reports, path: reports/, if-no-files-found: ignore }
 
@@ -38,15 +38,15 @@ jobs:
     name: Políticas do projeto
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: bash scripts/audit/policy-checks.sh
 
   dependencies:
     name: Dependências (npm audit, licenças, SBOM)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - run: npm ci --ignore-scripts
       - name: npm audit (produção) — bloqueia em high/critical
@@ -55,7 +55,7 @@ jobs:
         run: npm audit --audit-level=high || echo "::warning::vulnerabilidades em devDependencies"
       - run: bash scripts/audit/licenses.sh
       - run: npm sbom --sbom-format cyclonedx --omit=dev > sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: sbom, path: sbom.cdx.json }
 
   dependency-review:
@@ -64,8 +64,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: read, pull-requests: write }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
@@ -74,7 +74,7 @@ jobs:
     name: Varredura de segredos (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: gitleaks no histórico completo
         run: |
