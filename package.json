@@ -16,7 +16,8 @@
     "inspect": "tsx src/cli/inspect.ts",
     "prepare": "npm run build",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "audit:full": "bash scripts/audit.sh"
   },
   "repository": {
     "type": "git",
