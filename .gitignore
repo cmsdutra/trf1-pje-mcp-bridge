@@ -9,3 +9,4 @@ coverage/
 *.log
 AGENTS.md
 __tmp__/
+audit-reports/

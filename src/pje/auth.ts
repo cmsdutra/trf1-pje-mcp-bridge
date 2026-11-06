@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { chromium } from "playwright";
@@ -30,6 +31,8 @@ export async function runManualAuthentication(grau: Grau = "1"): Promise<{ grau:
   }
 
   await context.storageState({ path: config.storageStatePath });
+  // Cookies de sessão: restringe a leitura ao dono, independentemente do umask.
+  await fs.chmod(config.storageStatePath, 0o600);
   await browser.close();
   log("info", "Sessão PJe salva com storageState", { grau });
   return { grau, valid, message: "Sessão autenticada salva com sucesso." };
