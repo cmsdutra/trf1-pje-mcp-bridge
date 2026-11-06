@@ -8,4 +8,5 @@ inspection/
 coverage/
 *.log
 AGENTS.md
-__tmp__/audit-reports/
+__tmp__/
+audit-reports/
