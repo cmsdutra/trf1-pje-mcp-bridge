@@ -121,7 +121,23 @@ export async function baixarDocumentoComSessao(
       });
     }
 
+    // Recusa cedo pelo Content-Length; o corpo é carregado inteiro em memória, então o teto vale de novo depois.
+    const declarado = Number(response.headers()["content-length"]);
+    if (Number.isFinite(declarado) && declarado > config.maxDocumentBytes) {
+      throw new PjeError("DOWNLOAD_FAILED", `Documento ${documentoId} excede o limite de ${config.maxDocumentBytes} bytes (PJE_MAX_DOCUMENT_BYTES).`, {
+        grau,
+        documentoId,
+        bytes: declarado,
+      });
+    }
     const corpo = await response.body();
+    if (corpo.length > config.maxDocumentBytes) {
+      throw new PjeError("DOWNLOAD_FAILED", `Documento ${documentoId} excede o limite de ${config.maxDocumentBytes} bytes (PJE_MAX_DOCUMENT_BYTES).`, {
+        grau,
+        documentoId,
+        bytes: corpo.length,
+      });
+    }
     if (pareceTelaDeLogin(response.url(), corpo)) {
       throw new PjeError("SESSION_EXPIRED", `Sessão PJe expirada durante o download. ${AUTH_INSTRUCTIONS}`, { grau, documentoId });
     }
@@ -237,7 +253,28 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
     }
 
     const documentos = sortDocumentsByProcessOrder(mapTimelineParaDocumentos(await extrairTimeline(autos.page)));
+    if (documentos.length > config.maxBatchDocuments) {
+      throw new PjeError(
+        "INVALID_INPUT",
+        `O processo tem ${documentos.length} documentos, acima do limite de ${config.maxBatchDocuments} por coleta (PJE_MAX_BATCH_DOCUMENTS). Use baixar_documento ou aumente o limite.`,
+        { grau, quantidade: documentos.length },
+      );
+    }
+    let bytesTotais = 0;
     for (const documento of documentos) {
+      if (bytesTotais >= config.maxBatchBytes) {
+        manifestDocs.push({
+          indice: documento.indice,
+          identificador: documento.identificadorInterno,
+          nomeOriginal: documento.nome,
+          tipo: documento.tipo,
+          data: documento.data,
+          metadados: documento.metadados,
+          status: "erro",
+          mensagemErro: `Limite de ${config.maxBatchBytes} bytes por coleta atingido (PJE_MAX_BATCH_BYTES).`,
+        });
+        continue;
+      }
       try {
         const resultado = await baixarDocumentoComSessao(
           session,
@@ -247,6 +284,8 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
           documento,
           metadadosProcesso?.identificadorInterno,
         );
+        const bytes = resultado.metadados.metadados?.bytes;
+        if (typeof bytes === "number") bytesTotais += bytes;
         manifestDocs.push({
           indice: documento.indice,
           identificador: documento.identificadorInterno,

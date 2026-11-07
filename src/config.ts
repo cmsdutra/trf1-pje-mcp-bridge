@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * confiável) e só aceita as chaves conhecidas — um `.env` não deve conseguir injetar variáveis
  * arbitrárias (PLAYWRIGHT_*, NODE_OPTIONS, proxies...) no processo.
  */
-const ALLOWED_ENV_KEYS = ["PJE_DOWNLOAD_DIR", "PJE_STORAGE_STATE_PATH", "PJE_HEADLESS", "PJE_CHROMIUM_SANDBOX", "LOG_LEVEL"];
+const ALLOWED_ENV_KEYS = ["PJE_DOWNLOAD_DIR", "PJE_STORAGE_STATE_PATH", "PJE_HEADLESS", "PJE_CHROMIUM_SANDBOX", "PJE_MAX_SESSIONS", "PJE_MAX_DOCUMENT_BYTES", "PJE_MAX_BATCH_DOCUMENTS", "PJE_MAX_BATCH_BYTES", "LOG_LEVEL"];
 
 function loadPackageEnv(): void {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +51,11 @@ function parseLogLevel(value: string | undefined): LogLevel {
   return "info";
 }
 
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const n = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 export const config = {
   name: "mcp-pje-trf1",
   version: "1.0.0",
@@ -61,4 +66,11 @@ export const config = {
   /** Sandbox do Chromium ligado por padrão; desligue (`PJE_CHROMIUM_SANDBOX=false`) só em containers que o exijam. */
   chromiumSandbox: process.env.PJE_CHROMIUM_SANDBOX?.toLowerCase() !== "false",
   logLevel: parseLogLevel(process.env.LOG_LEVEL),
+  /** Navegadores Chromium simultâneos; chamadas além disso esperam na fila. */
+  maxSessions: parsePositiveInt(process.env.PJE_MAX_SESSIONS, 2),
+  /** Teto de bytes por documento (o corpo é carregado inteiro em memória). */
+  maxDocumentBytes: parsePositiveInt(process.env.PJE_MAX_DOCUMENT_BYTES, 100 * 1024 * 1024),
+  /** Teto de documentos e de bytes totais por chamada de `baixar_inteiro_teor`. */
+  maxBatchDocuments: parsePositiveInt(process.env.PJE_MAX_BATCH_DOCUMENTS, 1000),
+  maxBatchBytes: parsePositiveInt(process.env.PJE_MAX_BATCH_BYTES, 2 * 1024 * 1024 * 1024),
 };

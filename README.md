@@ -78,10 +78,12 @@ sh scripts/install-deps.sh --skip-build
 
 ### Direto do GitHub
 
+> **Fixe uma versão.** Sem `#<commit-sha>` (ou tag), o `npx` executa o HEAD atual da branch padrão — e o script `prepare` roda build na instalação —, em um processo que tem acesso à sua sessão do PJe. Substitua `<commit-sha>` pelo commit que você revisou e confirme que o dono do repositório (`cmsdutra`) é o esperado: um fork como `naiberpontes/trf1-pje-mcp-bridge` exige trocar o dono nos comandos abaixo.
+
 Para registrar o servidor sem manter um clone manual, use `npx` com o repositório GitHub. O pacote executa `npm run build` durante a instalação via script `prepare`.
 
 ```bash
-codex mcp add pje-trf1 -- npx -y github:cmsdutra/trf1-pje-mcp-bridge
+codex mcp add pje-trf1 -- npx -y github:cmsdutra/trf1-pje-mcp-bridge#<commit-sha>
 ```
 
 O Chromium do Playwright precisa existir na máquina de destino. Instale uma vez:
@@ -99,8 +101,14 @@ PJE_DOWNLOAD_DIR=
 PJE_STORAGE_STATE_PATH=
 PJE_HEADLESS=true
 PJE_CHROMIUM_SANDBOX=true
+PJE_MAX_SESSIONS=2
+PJE_MAX_DOCUMENT_BYTES=104857600
+PJE_MAX_BATCH_DOCUMENTS=1000
+PJE_MAX_BATCH_BYTES=2147483648
 LOG_LEVEL=info
 ```
+
+Limites de recursos: `PJE_MAX_SESSIONS` é o número de Chromiums simultâneos (as demais chamadas esperam na fila); `PJE_MAX_DOCUMENT_BYTES` é o teto por documento; `PJE_MAX_BATCH_DOCUMENTS` e `PJE_MAX_BATCH_BYTES` limitam uma coleta de `baixar_inteiro_teor` (acima de documentos, a chamada falha antes de baixar; acima de bytes, os restantes entram no manifesto como erro).
 
 O `.env` é lido **somente da raiz do pacote** (nunca do diretório atual) e apenas essas chaves são aceitas; variáveis do ambiente do processo (por exemplo, o bloco `env` do cliente MCP) têm precedência. O sandbox do Chromium fica ligado; use `PJE_CHROMIUM_SANDBOX=false` apenas em containers que o exijam.
 
@@ -128,8 +136,8 @@ npm run auth -- 2
 Em instalação direta via GitHub/npx:
 
 ```bash
-npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth
-npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth 2
+npx -y -p github:cmsdutra/trf1-pje-mcp-bridge#<commit-sha> mcp-pje-trf1-auth
+npx -y -p github:cmsdutra/trf1-pje-mcp-bridge#<commit-sha> mcp-pje-trf1-auth 2
 ```
 
 ## Interface autenticada mapeada
@@ -194,7 +202,7 @@ npm run inspect -- 0000000-00.0000.4.01.0000 2
 Em instalação direta via GitHub/npx:
 
 ```bash
-npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-inspect 0000000-00.0000.4.01.0000
+npx -y -p github:cmsdutra/trf1-pje-mcp-bridge#<commit-sha> mcp-pje-trf1-inspect 0000000-00.0000.4.01.0000
 ```
 
 O comando abre Chromium visível com a sessão salva, pausa em dois pontos (abertura do processo — que no PJe já
@@ -260,7 +268,7 @@ A sintaxe verificada localmente em 07/08/2026 é:
 Para instalação direta do GitHub:
 
 ```bash
-codex mcp add pje-trf1 -- npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1
+codex mcp add pje-trf1 -- npx -y -p github:cmsdutra/trf1-pje-mcp-bridge#<commit-sha> mcp-pje-trf1
 ```
 
 Para clone local com caminho absoluto:
@@ -286,7 +294,7 @@ Configuração TOML equivalente para GitHub/npx:
 ```toml
 [mcp_servers.pje-trf1]
 command = "npx"
-args = ["-y", "-p", "github:cmsdutra/trf1-pje-mcp-bridge", "mcp-pje-trf1"]
+args = ["-y", "-p", "github:cmsdutra/trf1-pje-mcp-bridge#<commit-sha>", "mcp-pje-trf1"]
 startup_timeout_sec = 120.0
 
 [mcp_servers.pje-trf1.env]
@@ -330,7 +338,7 @@ Use o MCP pje-trf1 para verificar o status da autenticação.
 Se a sessão estiver ausente ou expirada, autentique novamente:
 
 ```bash
-npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth
+npx -y -p github:cmsdutra/trf1-pje-mcp-bridge#<commit-sha> mcp-pje-trf1-auth
 ```
 
 Depois do status válido, faça testes graduais antes de baixar documentos:
@@ -386,7 +394,7 @@ falha de rede foram observadas salvando execuções reais.
 
 ## Troubleshooting
 
-- `SESSION_MISSING`: autentique com `npm run auth` no clone local ou `npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth` na instalação via GitHub/npx.
+- `SESSION_MISSING`: autentique com `npm run auth` no clone local ou `npx -y -p github:cmsdutra/trf1-pje-mcp-bridge#<commit-sha> mcp-pje-trf1-auth` na instalação via GitHub/npx.
 - `SESSION_EXPIRED`: repita a autenticação manual com o mesmo comando usado inicialmente.
 - `PJE_INTERFACE_CHANGED`: os elementos esperados não foram encontrados na página — a interface do PJe mudou desde o último mapeamento. Rode `npm run inspect -- <numero-processo>` (ver "Reinspecionar após mudança do PJe") e atualize `src/pje/selectors.ts`/`src/pje/autos.ts` com os artefatos capturados.
 - `PROCESS_NOT_FOUND` / `PROCESS_NOT_ACCESSIBLE`: o processo não existe naquele grau ou a conta autenticada não tem acesso a ele. Confira o número e o grau.

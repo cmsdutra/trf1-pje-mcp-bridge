@@ -4,15 +4,20 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import { config } from "../config.js";
 import { log } from "../utils/logger.js";
 import { PjeError } from "../utils/errors.js";
+import { Semaphore } from "../utils/semaphore.js";
 import { getPjeEnvironment, type Grau } from "./urls.js";
 
 export const AUTH_INSTRUCTIONS =
   "Autentique manualmente com `npm run auth` no clone local ou `npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth` na instalação via GitHub/npx.";
 
+const sessionSlots = new Semaphore(config.maxSessions);
+
 export interface PjeSession {
   browser: Browser;
   context: BrowserContext;
   page: Page;
+  /** Marca que a vaga do semáforo já foi devolvida (closeSession é idempotente). */
+  released?: boolean;
 }
 
 export async function hasSavedSession(): Promise<boolean> {
@@ -29,19 +34,35 @@ export async function launchSession(grau: Grau, headless = config.headless): Pro
     throw new PjeError("SESSION_MISSING", `Sessão PJe não encontrada. ${AUTH_INSTRUCTIONS}`);
   }
   const env = getPjeEnvironment(grau);
-  const browser = await chromium.launch({ headless, chromiumSandbox: config.chromiumSandbox });
-  const context = await browser.newContext({
-    storageState: config.storageStatePath,
-    acceptDownloads: true,
-  });
-  const page = await context.newPage();
-  log("debug", "Abrindo sessão PJe salva", { grau, url: env.loginUrl, headless });
-  return { browser, context, page };
+  // Limita Chromiums simultâneos: um loop de chamadas não pode esgotar memória/CPU da máquina.
+  await sessionSlots.acquire();
+  try {
+    const browser = await chromium.launch({ headless, chromiumSandbox: config.chromiumSandbox });
+    try {
+      const context = await browser.newContext({
+        storageState: config.storageStatePath,
+        acceptDownloads: true,
+      });
+      const page = await context.newPage();
+      log("debug", "Abrindo sessão PJe salva", { grau, url: env.loginUrl, headless });
+      return { browser, context, page };
+    } catch (error) {
+      await browser.close().catch(() => undefined);
+      throw error;
+    }
+  } catch (error) {
+    sessionSlots.release();
+    throw error;
+  }
 }
 
 export async function closeSession(session: PjeSession): Promise<void> {
   await session.context.close().catch(() => undefined);
   await session.browser.close().catch(() => undefined);
+  if (!session.released) {
+    session.released = true;
+    sessionSlots.release();
+  }
 }
 
 export async function detectAuthenticated(page: Page, grau: Grau): Promise<boolean> {
