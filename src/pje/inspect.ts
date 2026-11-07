@@ -126,7 +126,7 @@ async function captureStep(page: Page, outputDir: string, slug: string, files: s
 
 export async function runAuthenticatedInspection(grau: Grau, numeroProcesso: string): Promise<InspectionResult> {
   const numeroCnj = assertValidCnj(numeroProcesso);
-  if (!(await hasSavedSession())) {
+  if (!(await hasSavedSession(grau))) {
     throw new PjeError("SESSION_MISSING", `Sessão PJe não encontrada. ${AUTH_INSTRUCTIONS}`);
   }
 

@@ -74,3 +74,14 @@ export const config = {
   maxBatchDocuments: parsePositiveInt(process.env.PJE_MAX_BATCH_DOCUMENTS, 1000),
   maxBatchBytes: parsePositiveInt(process.env.PJE_MAX_BATCH_BYTES, 2 * 1024 * 1024 * 1024),
 };
+
+/**
+ * Arquivo de sessão de cada grau. O 1º grau usa `storageStatePath` como está; o 2º usa o mesmo caminho
+ * com `-2g` antes da extensão. Os graus têm SSO e perfil próprios: com um arquivo só, autenticar um
+ * sobrescreveria o outro.
+ */
+export function storageStatePathFor(grau: "1" | "2"): string {
+  if (grau === "1") return config.storageStatePath;
+  const { dir, name, ext } = path.parse(config.storageStatePath);
+  return path.join(dir, `${name}-2g${ext}`);
+}

@@ -173,9 +173,12 @@ O fluxo implementado (`src/pje/autos.ts`) é:
 O perfil (papel + localização) é escolhido no login e fica preso à sessão no servidor; ele decide quais processos a
 sessão enxerga. `status_autenticacao` devolve `perfilAtivo` (papel, cargo e ids de órgão/localização; nunca nome ou
 login), e o `PROCESS_NOT_FOUND` traz o mesmo dado em `details`. Para trocar de perfil é preciso refazer a
-autenticação. O `storageState` é um único arquivo (`PJE_STORAGE_STATE_PATH`) compartilhado pelos graus: `npm run auth`
-e `npm run auth -- 2` gravam no mesmo caminho e o segundo sobrescreve o primeiro. Para usar os dois graus, rode o
-servidor com um `PJE_STORAGE_STATE_PATH` por grau (duas instâncias).
+autenticação. Cada grau tem o seu `storageState`: o 1º grau grava em `PJE_STORAGE_STATE_PATH` (padrão
+`storage-state.json`) e o 2º no mesmo caminho com `-2g` antes da extensão (`storage-state-2g.json`). Assim
+`npm run auth` e `npm run auth -- 2` não se sobrescrevem e os dois graus ficam autenticados ao mesmo tempo. Quem
+atua com mais de um perfil no mesmo grau ainda precisa de um `PJE_STORAGE_STATE_PATH` por perfil (uma instância do
+servidor para cada). Se a verificação da sessão falhar por rede ou lentidão, o erro é `TIMEOUT`, não
+`SESSION_EXPIRED`.
 
 ### Armadilhas confirmadas contra o PJe real
 

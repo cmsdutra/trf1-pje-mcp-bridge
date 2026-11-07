@@ -7,7 +7,7 @@ export const statusAutenticacaoSchema = {
 };
 
 export async function statusAutenticacao({ grau }: { grau: Grau }) {
-  const existeSessaoSalva = await hasSavedSession();
+  const existeSessaoSalva = await hasSavedSession(grau);
   if (!existeSessaoSalva) {
     return {
       existeSessaoSalva,

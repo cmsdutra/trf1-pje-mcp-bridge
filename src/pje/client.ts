@@ -1,14 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { config } from "../config.js";
+import { config, storageStatePathFor } from "../config.js";
 import { log } from "../utils/logger.js";
 import { PjeError } from "../utils/errors.js";
 import { Semaphore } from "../utils/semaphore.js";
 import { getPjeEnvironment, type Grau } from "./urls.js";
 
 export const AUTH_INSTRUCTIONS =
-  "Autentique manualmente com `npm run auth` no clone local ou `npx -y -p github:naiberpontes/trf1-pje-mcp-bridge mcp-pje-trf1-auth` na instalação via GitHub/npx.";
+  "Autentique manualmente com `npm run auth` no clone local ou `npx -y -p github:naiberpontes/trf1-pje-mcp-bridge mcp-pje-trf1-auth` na instalação via GitHub/npx. Para o 2º grau, acrescente `-- 2` (npm) ou `2` (npx) ao comando.";
 
 const sessionSlots = new Semaphore(config.maxSessions);
 
@@ -20,9 +20,9 @@ export interface PjeSession {
   released?: boolean;
 }
 
-export async function hasSavedSession(): Promise<boolean> {
+export async function hasSavedSession(grau: Grau): Promise<boolean> {
   try {
-    await fs.access(config.storageStatePath);
+    await fs.access(storageStatePathFor(grau));
     return true;
   } catch {
     return false;
@@ -30,8 +30,8 @@ export async function hasSavedSession(): Promise<boolean> {
 }
 
 export async function launchSession(grau: Grau, headless = config.headless): Promise<PjeSession> {
-  if (!(await hasSavedSession())) {
-    throw new PjeError("SESSION_MISSING", `Sessão PJe não encontrada. ${AUTH_INSTRUCTIONS}`);
+  if (!(await hasSavedSession(grau))) {
+    throw new PjeError("SESSION_MISSING", `Sessão PJe do ${grau}º grau não encontrada. ${AUTH_INSTRUCTIONS}`, { grau });
   }
   const env = getPjeEnvironment(grau);
   // Limita Chromiums simultâneos: um loop de chamadas não pode esgotar memória/CPU da máquina.
@@ -40,7 +40,7 @@ export async function launchSession(grau: Grau, headless = config.headless): Pro
     const browser = await chromium.launch({ headless, chromiumSandbox: config.chromiumSandbox });
     try {
       const context = await browser.newContext({
-        storageState: config.storageStatePath,
+        storageState: storageStatePathFor(grau),
         acceptDownloads: true,
       });
       const page = await context.newPage();
@@ -116,10 +116,27 @@ export async function lerPerfilAtivo(session: PjeSession, grau: Grau): Promise<P
 
 export async function requireAuthenticated(grau: Grau): Promise<PjeSession> {
   const session = await launchSession(grau, true);
-  const valid = await detectAuthenticated(session.page, grau).catch((error: unknown) => {
-    log("warn", "Falha ao verificar sessão PJe", { grau, error: String(error) });
-    return false;
-  });
+  // Exceção na verificação (timeout, rede) NÃO é sessão expirada: tenta de novo e, se persistir, avisa
+  // que não deu para verificar, em vez de mandar o usuário reautenticar sem necessidade.
+  let valid = false;
+  let falhaDeVerificacao: unknown;
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    try {
+      valid = await detectAuthenticated(session.page, grau);
+      falhaDeVerificacao = undefined;
+      break;
+    } catch (error) {
+      falhaDeVerificacao = error;
+      log("warn", "Falha ao verificar sessão PJe", { grau, tentativa, error: String(error) });
+    }
+  }
+  if (falhaDeVerificacao) {
+    await closeSession(session);
+    throw new PjeError("TIMEOUT", "Não foi possível verificar a sessão do PJe (falha de rede ou lentidão). Isso não indica sessão expirada; tente novamente.", {
+      grau,
+      erro: String(falhaDeVerificacao).slice(0, 200),
+    });
+  }
   if (!valid) {
     await closeSession(session);
     throw new PjeError("SESSION_EXPIRED", `Sessão PJe inexistente ou expirada. ${AUTH_INSTRUCTIONS}`, { grau });
@@ -127,6 +144,6 @@ export async function requireAuthenticated(grau: Grau): Promise<PjeSession> {
   return session;
 }
 
-export async function ensureStorageDir(): Promise<void> {
-  await fs.mkdir(path.dirname(config.storageStatePath), { recursive: true, mode: 0o700 });
+export async function ensureStorageDir(grau: Grau): Promise<void> {
+  await fs.mkdir(path.dirname(storageStatePathFor(grau)), { recursive: true, mode: 0o700 });
 }

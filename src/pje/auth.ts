@@ -1,7 +1,7 @@
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { chromium } from "playwright";
-import { config } from "../config.js";
+import { config, storageStatePathFor } from "../config.js";
 import { PjeError } from "../utils/errors.js";
 import { writePrivateFileAtomic } from "../utils/filesystem.js";
 import { log } from "../utils/logger.js";
@@ -10,7 +10,7 @@ import { getPjeEnvironment, type Grau } from "./urls.js";
 
 export async function runManualAuthentication(grau: Grau = "1"): Promise<{ grau: Grau; valid: boolean; message: string }> {
   const env = getPjeEnvironment(grau);
-  await ensureStorageDir();
+  await ensureStorageDir(grau);
   const browser = await chromium.launch({ headless: false, chromiumSandbox: config.chromiumSandbox });
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
@@ -33,7 +33,7 @@ export async function runManualAuthentication(grau: Grau = "1"): Promise<{ grau:
   // Cookies de sessão: o arquivo nasce com 0600 (sem janela legível por outros usuários) e entra
   // no lugar por rename atômico, em vez de gravar com o umask e só depois fazer chmod.
   const state = await context.storageState();
-  await writePrivateFileAtomic(config.storageStatePath, JSON.stringify(state));
+  await writePrivateFileAtomic(storageStatePathFor(grau), JSON.stringify(state));
   await browser.close();
   log("info", "Sessão PJe salva com storageState", { grau });
   return { grau, valid, message: "Sessão autenticada salva com sucesso." };
