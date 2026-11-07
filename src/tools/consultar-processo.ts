@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { consultarProcesso } from "../pje/process.js";
 
 export const consultarProcessoSchema = {
-  numero_processo: z.string(),
+  numero_processo: z.string().max(40),
   grau: z.enum(["1", "2"]),
 };
 

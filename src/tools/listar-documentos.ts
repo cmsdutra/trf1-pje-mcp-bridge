@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { listarDocumentos } from "../pje/documents.js";
 
 export const listarDocumentosSchema = {
-  numero_processo: z.string(),
+  numero_processo: z.string().max(40),
   grau: z.enum(["1", "2"]),
 };
 

@@ -1,11 +1,10 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import type { APIResponse } from "playwright";
 import { config } from "../config.js";
 import type { DocumentoProcesso, DownloadDocumentoResultado, ManifestDocumento, ManifestInteiroTeor, ProcessoMetadata } from "../types.js";
 import { assertValidCnj } from "../utils/cnj.js";
 import { PjeError } from "../utils/errors.js";
-import { ensureDirInsideBase, nextAvailableFilePath, sanitizeFileName, writeJsonFile } from "../utils/filesystem.js";
+import { ensureDirInsideBase, sanitizeFileName, writeFileExclusive } from "../utils/filesystem.js";
 import { log } from "../utils/logger.js";
 import { AUTH_INSTRUCTIONS, closeSession, requireAuthenticated, type PjeSession } from "./client.js";
 import { abrirAutosDigitais, extrairCabecalho, extrairTimeline } from "./autos.js";
@@ -13,6 +12,9 @@ import { extensaoParaContentType, mapCabecalhoParaMetadata, mapTimelineParaDocum
 import { authenticatedSelectors } from "./selectors.js";
 import { getPjeEnvironment, type Grau } from "./urls.js";
 import { sortDocumentsByProcessOrder } from "./documents.js";
+
+/** `idProcessoDocumento` do PJe é numérico; qualquer outra coisa iria crua para o caminho da URL. */
+export const DOCUMENTO_ID_RE = /^\d{1,20}$/;
 
 export function makeDownloadFileName(documento: DocumentoProcesso, extension = ".pdf"): string {
   const base = sanitizeFileName(documento.nome || documento.tipo || "documento");
@@ -89,6 +91,9 @@ export async function baixarDocumentoComSessao(
   documento?: DocumentoProcesso,
   idProcesso?: string,
 ): Promise<DownloadDocumentoResultado> {
+  if (!DOCUMENTO_ID_RE.test(documentoId) || (idProcesso !== undefined && !DOCUMENTO_ID_RE.test(idProcesso))) {
+    throw new PjeError("INVALID_INPUT", "Identificador de documento/processo inválido.", { field: "documento_id" });
+  }
   const tentativas = urlsDeDownload(grau, documentoId, idProcesso);
   let ultimoStatus = 0;
 
@@ -116,7 +121,23 @@ export async function baixarDocumentoComSessao(
       });
     }
 
+    // Recusa cedo pelo Content-Length; o corpo é carregado inteiro em memória, então o teto vale de novo depois.
+    const declarado = Number(response.headers()["content-length"]);
+    if (Number.isFinite(declarado) && declarado > config.maxDocumentBytes) {
+      throw new PjeError("DOWNLOAD_FAILED", `Documento ${documentoId} excede o limite de ${config.maxDocumentBytes} bytes (PJE_MAX_DOCUMENT_BYTES).`, {
+        grau,
+        documentoId,
+        bytes: declarado,
+      });
+    }
     const corpo = await response.body();
+    if (corpo.length > config.maxDocumentBytes) {
+      throw new PjeError("DOWNLOAD_FAILED", `Documento ${documentoId} excede o limite de ${config.maxDocumentBytes} bytes (PJE_MAX_DOCUMENT_BYTES).`, {
+        grau,
+        documentoId,
+        bytes: corpo.length,
+      });
+    }
     if (pareceTelaDeLogin(response.url(), corpo)) {
       throw new PjeError("SESSION_EXPIRED", `Sessão PJe expirada durante o download. ${AUTH_INSTRUCTIONS}`, { grau, documentoId });
     }
@@ -131,8 +152,8 @@ export async function baixarDocumentoComSessao(
     const nomeArquivo = documento
       ? makeDownloadFileName(documento, extensao)
       : `${sanitizeFileName(`documento_${documentoId}`)}${extensao}`;
-    const caminhoLocal = await nextAvailableFilePath(destinoDir, nomeArquivo);
-    await fs.writeFile(caminhoLocal, corpo, { mode: 0o600 });
+    // `wx`: nunca sobrescreve nem segue symlink; em colisão usa o próximo sufixo.
+    const caminhoLocal = await writeFileExclusive(destinoDir, nomeArquivo, corpo);
 
     const metadados: DocumentoProcesso = documento ?? {
       indice: 0,
@@ -163,8 +184,8 @@ export async function baixarDocumento(
   diretorioDestino?: string,
 ): Promise<DownloadDocumentoResultado> {
   assertValidCnj(numeroProcesso);
-  if (!documentoId.trim()) {
-    throw new PjeError("INVALID_INPUT", "documento_id é obrigatório.", { field: "documento_id" });
+  if (!DOCUMENTO_ID_RE.test(documentoId.trim())) {
+    throw new PjeError("INVALID_INPUT", "documento_id deve ser numérico (idProcessoDocumento).", { field: "documento_id" });
   }
   const baseDir = diretorioDestino ? path.resolve(config.downloadDir, diretorioDestino) : config.downloadDir;
   const destinoDir = await ensureDirInsideBase(config.downloadDir, path.relative(config.downloadDir, baseDir));
@@ -232,7 +253,28 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
     }
 
     const documentos = sortDocumentsByProcessOrder(mapTimelineParaDocumentos(await extrairTimeline(autos.page)));
+    if (documentos.length > config.maxBatchDocuments) {
+      throw new PjeError(
+        "INVALID_INPUT",
+        `O processo tem ${documentos.length} documentos, acima do limite de ${config.maxBatchDocuments} por coleta (PJE_MAX_BATCH_DOCUMENTS). Use baixar_documento ou aumente o limite.`,
+        { grau, quantidade: documentos.length },
+      );
+    }
+    let bytesTotais = 0;
     for (const documento of documentos) {
+      if (bytesTotais >= config.maxBatchBytes) {
+        manifestDocs.push({
+          indice: documento.indice,
+          identificador: documento.identificadorInterno,
+          nomeOriginal: documento.nome,
+          tipo: documento.tipo,
+          data: documento.data,
+          metadados: documento.metadados,
+          status: "erro",
+          mensagemErro: `Limite de ${config.maxBatchBytes} bytes por coleta atingido (PJE_MAX_BATCH_BYTES).`,
+        });
+        continue;
+      }
       try {
         const resultado = await baixarDocumentoComSessao(
           session,
@@ -242,6 +284,8 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
           documento,
           metadadosProcesso?.identificadorInterno,
         );
+        const bytes = resultado.metadados.metadados?.bytes;
+        if (typeof bytes === "number") bytesTotais += bytes;
         manifestDocs.push({
           indice: documento.indice,
           identificador: documento.identificadorInterno,
@@ -278,6 +322,6 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
   });
   // `writeJsonFile` grava com flag `wx` (nunca sobrescreve). Numa segunda coleta do mesmo processo
   // o manifesto anterior é preservado e este vira `manifest-1.json`.
-  await writeJsonFile(await nextAvailableFilePath(processDir, "manifest.json"), manifest);
+  await writeFileExclusive(processDir, "manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }
