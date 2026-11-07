@@ -21,7 +21,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cmsdutra/trf1-pje-mcp-bridge.git"
+    "url": "git+https://github.com/naiberpontes/trf1-pje-mcp-bridge.git"
   },
   "keywords": [
     "mcp",
@@ -33,9 +33,9 @@
   "license": "MIT",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/cmsdutra/trf1-pje-mcp-bridge/issues"
+    "url": "https://github.com/naiberpontes/trf1-pje-mcp-bridge/issues"
   },
-  "homepage": "https://github.com/cmsdutra/trf1-pje-mcp-bridge#readme",
+  "homepage": "https://github.com/naiberpontes/trf1-pje-mcp-bridge#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "dotenv": "^17.4.2",

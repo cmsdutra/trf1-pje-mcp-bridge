@@ -8,7 +8,7 @@ import { Semaphore } from "../utils/semaphore.js";
 import { getPjeEnvironment, type Grau } from "./urls.js";
 
 export const AUTH_INSTRUCTIONS =
-  "Autentique manualmente com `npm run auth` no clone local ou `npx -y -p github:cmsdutra/trf1-pje-mcp-bridge mcp-pje-trf1-auth` na instalação via GitHub/npx.";
+  "Autentique manualmente com `npm run auth` no clone local ou `npx -y -p github:naiberpontes/trf1-pje-mcp-bridge mcp-pje-trf1-auth` na instalação via GitHub/npx.";
 
 const sessionSlots = new Semaphore(config.maxSessions);
 
