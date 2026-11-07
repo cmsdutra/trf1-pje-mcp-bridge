@@ -26,6 +26,22 @@ export function ensureInsideBase(baseDir: string, candidate: string): string {
   return resolvedCandidate;
 }
 
+const NOME_RESERVADO_WINDOWS = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
+/**
+ * Recusa segmentos que o Windows trata de forma especial: nomes de dispositivo (`con`, `nul`, `COM1`…)
+ * e nomes terminados em ponto ou espaço. O Node chega a criar essas pastas, mas o Explorer não as
+ * abre nem exclui. Vale em qualquer sistema para o comportamento ser o mesmo em todos.
+ */
+function assertNomesPortaveis(relativeDir: string): void {
+  for (const segmento of relativeDir.split(/[\\/]+/)) {
+    if (!segmento || segmento === "." || segmento === "..") continue;
+    if (NOME_RESERVADO_WINDOWS.test(segmento) || /[. ]$/.test(segmento)) {
+      throw new PjeError("INVALID_INPUT", `Nome de pasta não permitido no diretório de destino: "${segmento}".`, { field: "diretorio_destino" });
+    }
+  }
+}
+
 /** True se `child` está em `parent` (ou é ele), comparando caminhos já resolvidos. */
 function isWithin(parent: string, child: string): boolean {
   const relative = path.relative(parent, child);
@@ -38,6 +54,7 @@ function isWithin(parent: string, child: string): boolean {
  */
 export async function ensureDirInsideBase(baseDir: string, relativeDir = "."): Promise<string> {
   const dir = ensureInsideBase(baseDir, relativeDir);
+  assertNomesPortaveis(relativeDir);
   await fs.mkdir(baseDir, { recursive: true, mode: 0o700 });
   const realBase = await fs.realpath(baseDir);
   const falha = () => new PjeError("PATH_TRAVERSAL", "Caminho de destino fora do diretório-base autorizado (symlink).");
