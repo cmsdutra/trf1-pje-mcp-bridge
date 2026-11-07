@@ -191,7 +191,16 @@ export async function baixarDocumento(
   const destinoDir = await ensureDirInsideBase(config.downloadDir, path.relative(config.downloadDir, baseDir));
   const session = await requireAuthenticated(grau);
   try {
-    return await baixarDocumentoComSessao(session, grau, documentoId.trim(), destinoDir);
+    try {
+      return await baixarDocumentoComSessao(session, grau, documentoId.trim(), destinoDir);
+    } catch (error) {
+      // No 2º grau a URL curta responde 404; só a variante longa (com `idProcesso`) atende. O
+      // `idProcesso` vem dos autos, então só os abrimos quando a forma curta falhou.
+      if (!(error instanceof PjeError) || error.code !== "DOCUMENT_NOT_FOUND") throw error;
+      const autos = await abrirAutosDigitais(session, numeroProcesso, grau);
+      if (!autos.idProcesso) throw error;
+      return await baixarDocumentoComSessao(session, grau, documentoId.trim(), destinoDir, undefined, autos.idProcesso);
+    }
   } finally {
     await closeSession(session);
   }

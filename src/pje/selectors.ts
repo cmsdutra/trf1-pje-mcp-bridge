@@ -68,6 +68,18 @@ export const authenticatedSelectors = {
    */
   enderecoAutosPathTemplate: "/seam/resource/rest/pje-legacy/processo/{numeroCnj}/enderecoAutos",
   /**
+   * "Acesso rápido" do 2º grau. Lá a caixa NÃO chama `enderecoAutos`: o painel (`ng2/dev.seam`) define a
+   * função global `pesquisaRapida(numeroSoDigitos)`, que faz um POST AJAX e abre um popup em
+   * `pesquisaRapidaProcesso.seam`; esse popup embute o `idProcesso` e redireciona para
+   * `listAutosDigitais.seam`. Se o processo não existe/não é visível ao perfil ativo, o popup dá
+   * `alert("Processo não encontrado")` e se fecha. Chamar a função evita clicar na SPA e depender dos
+   * `j_id` gerados pelo JSF.
+   */
+  pesquisaRapida: {
+    painelPath: "/ng2/dev.seam",
+    fn: "pesquisaRapida",
+  },
+  /**
    * Endpoint REST de download/visualização de um documento. É a `src` do `<iframe id="frameHtml">`
    * do visualizador e depende apenas do cookie de sessão — sem token na URL.
    */

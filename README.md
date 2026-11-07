@@ -149,16 +149,33 @@ cross-origin e não é usada por nenhuma das tools.
 
 O fluxo implementado (`src/pje/autos.ts`) é:
 
-1. `GET <baseUrl>/seam/resource/rest/pje-legacy/processo/<numeroCnj>/enderecoAutos` devolve, em texto puro, a URL
-   dos autos digitais já com o `idProcesso` interno e o token de navegação `ca`. É o mesmo endpoint que a caixa
-   "Acesso rápido" do menu lateral do PJe chama ao pressionar Enter, então basta o cookie de sessão — não é
-   preciso reproduzir o popup de busca rápida.
+1. **Pesquisa rápida (1º e 2º graus).** Abre-se o painel (`/ng2/dev.seam`) e chama-se a função global
+   `pesquisaRapida(<número só com dígitos>)`, a mesma da caixa "Acesso rápido". Ela abre um popup que redireciona
+   para `listAutosDigitais.seam?idProcesso=…&ca=…`; é essa a página usada pelas tools. Se o processo não existe ou
+   não é visível ao **perfil ativo da sessão**, o PJe dá `alert("Processo não encontrado")` e fecha o popup — isso
+   vira `PROCESS_NOT_FOUND` (definitivo, sem fallback). No 2º grau esse é o único caminho: lá a caixa não chama
+   `enderecoAutos`.
+   - **Fallback do 1º grau:** se a pesquisa rápida falhar por mudança de interface (`PJE_INTERFACE_CHANGED`), usa-se
+     `GET <baseUrl>/seam/resource/rest/pje-legacy/processo/<numeroCnj>/enderecoAutos`, que devolve em texto puro a URL
+     dos autos já com `idProcesso` e `ca`. Esse endpoint responde `204` de forma intermitente, o que o tornava
+     pouco confiável como caminho primário.
 2. Navegação para essa URL e leitura do cabeçalho (`#maisDetalhes`, `#poloAtivo`, `#poloPassivo`) e da timeline
    (`#divTimeLine`). A timeline usa rolagem infinita: as páginas restantes são carregadas via `novaPagina()` até
    `#paginaAtual` alcançar `#totalPaginas`.
 3. Download por HTTP direto em `<baseUrl>/seam/resource/rest/pje-legacy/documento/download/<idProcessoDocumento>`
    (a mesma URL que o visualizador do PJe usa como `src` do iframe), com fallback para a variante
-   `.../download/<TRIBUNAL>/<grau>g/<idProcesso>/<id>` usada pelo botão "abrir em outra aba".
+   `.../download/<TRIBUNAL>/<grau>g/<idProcesso>/<id>` usada pelo botão "abrir em outra aba". **No 2º grau a forma
+   curta responde 404 e só a longa atende**; por isso `baixar_documento` abre os autos para obter o `idProcesso`
+   quando a curta falha.
+
+### Perfis e sessões
+
+O perfil (papel + localização) é escolhido no login e fica preso à sessão no servidor; ele decide quais processos a
+sessão enxerga. `status_autenticacao` devolve `perfilAtivo` (papel, cargo e ids de órgão/localização; nunca nome ou
+login), e o `PROCESS_NOT_FOUND` traz o mesmo dado em `details`. Para trocar de perfil é preciso refazer a
+autenticação. O `storageState` é um único arquivo (`PJE_STORAGE_STATE_PATH`) compartilhado pelos graus: `npm run auth`
+e `npm run auth -- 2` gravam no mesmo caminho e o segundo sobrescreve o primeiro. Para usar os dois graus, rode o
+servidor com um `PJE_STORAGE_STATE_PATH` por grau (duas instâncias).
 
 ### Armadilhas confirmadas contra o PJe real
 

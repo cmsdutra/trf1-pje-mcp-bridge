@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   combinarDataHora,
+  ehAlertaProcessoNaoEncontrado,
   extensaoParaContentType,
   mapCabecalhoParaMetadata,
   mapTimelineParaDocumentos,
@@ -196,5 +197,17 @@ describe("extensaoParaContentType", () => {
   it("devolve undefined para tipo desconhecido ou ausente", () => {
     expect(extensaoParaContentType("application/x-coisa-nova")).toBeUndefined();
     expect(extensaoParaContentType(undefined)).toBeUndefined();
+  });
+});
+
+describe("ehAlertaProcessoNaoEncontrado", () => {
+  it("reconhece o alerta da pesquisa rápida do 2º grau", () => {
+    expect(ehAlertaProcessoNaoEncontrado("Processo não encontrado")).toBe(true);
+    expect(ehAlertaProcessoNaoEncontrado("processo nao encontrado.")).toBe(true);
+  });
+
+  it("não confunde com outros alertas", () => {
+    expect(ehAlertaProcessoNaoEncontrado("Sessão expirada")).toBe(false);
+    expect(ehAlertaProcessoNaoEncontrado("")).toBe(false);
   });
 });

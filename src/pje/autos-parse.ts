@@ -247,6 +247,11 @@ export function mapTimelineParaDocumentos(eventos: RawTimelineEvento[]): Documen
   return itens.map((item, posicao) => ({ ...item.doc, indice: posicao + 1 }));
 }
 
+/** O popup da pesquisa rápida do 2º grau avisa "Processo não encontrado" por `alert()` e se fecha. */
+export function ehAlertaProcessoNaoEncontrado(mensagem: string): boolean {
+  return /processo\s+n[ãa]o\s+encontrado/i.test(mensagem);
+}
+
 /** Extensão de arquivo a partir do `content-type` devolvido pelo endpoint de download. */
 export function extensaoParaContentType(contentType: string | undefined): string | undefined {
   const tipo = (contentType ?? "").split(";")[0].trim().toLowerCase();

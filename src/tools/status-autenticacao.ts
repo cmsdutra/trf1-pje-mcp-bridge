@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { hasSavedSession, launchSession, closeSession, detectAuthenticated } from "../pje/client.js";
+import { hasSavedSession, launchSession, closeSession, detectAuthenticated, lerPerfilAtivo } from "../pje/client.js";
 import type { Grau } from "../pje/urls.js";
 
 export const statusAutenticacaoSchema = {
@@ -24,6 +24,7 @@ export async function statusAutenticacao({ grau }: { grau: Grau }) {
       aparentementeValida,
       grauVerificado: grau,
       necessariaNovaAutenticacao: !aparentementeValida,
+      ...(aparentementeValida ? { perfilAtivo: await lerPerfilAtivo(session, grau) } : {}),
     };
   } finally {
     await closeSession(session);

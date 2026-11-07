@@ -1,10 +1,10 @@
 import type { APIResponse, Page } from "playwright";
 import { PjeError } from "../utils/errors.js";
 import { log } from "../utils/logger.js";
-import type { PjeSession } from "./client.js";
+import { lerPerfilAtivo, type PjeSession } from "./client.js";
 import { authenticatedSelectors } from "./selectors.js";
 import { getPjeEnvironment, type Grau } from "./urls.js";
-import type { RawCabecalho, RawTimelineEvento } from "./autos-parse.js";
+import { ehAlertaProcessoNaoEncontrado, type RawCabecalho, type RawTimelineEvento } from "./autos-parse.js";
 
 /** Trava de segurança do laço de rolagem infinita da timeline. */
 const MAX_PAGINAS_TIMELINE = 500;
@@ -215,7 +215,93 @@ function comAba(url: string): string {
 }
 
 /**
- * Abre os autos digitais do processo na `page` da sessão.
+ * Abre os autos pelo "Acesso rápido" do 2º grau (ver `authenticatedSelectors.pesquisaRapida`).
+ *
+ * Devolve a página do popup, já em `listAutosDigitais.seam`. Lança `PROCESS_NOT_FOUND` quando o PJe
+ * responde com o alerta "Processo não encontrado" — que, no 2º grau, também é o que se vê quando o
+ * perfil ativo da sessão não enxerga o processo (o perfil é estado do servidor, preso à sessão).
+ */
+async function abrirPorPesquisaRapida(session: PjeSession, numeroCnj: string, grau: Grau): Promise<Page> {
+  const env = getPjeEnvironment(grau);
+  const { page, context } = session;
+  const { painelPath, fn } = authenticatedSelectors.pesquisaRapida;
+
+  await page.goto(`${env.baseUrl}${painelPath}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  const disponivel = await page
+    .waitForFunction(`typeof ${fn} === "function"`, undefined, { timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!disponivel) {
+    throw new PjeError(
+      "PJE_INTERFACE_CHANGED",
+      `A função ${fn}() do painel do PJe ${grau}º grau não foi encontrada — a sessão pode ter expirado ou a interface mudou.`,
+      { grau, numeroCnj, url: limparUrlAutos(page.url()) },
+    );
+  }
+
+  // O ouvinte de `page` e o de `dialog` precisam existir ANTES de disparar a pesquisa: o alerta de
+  // "não encontrado" sai poucas centenas de ms depois de o popup abrir, e sem ouvinte o Playwright o
+  // descarta sem que a gente saiba o que ele dizia.
+  let naoEncontrado = false;
+  let onPage!: (aberta: Page) => void;
+  let timer!: NodeJS.Timeout;
+  const popupAberto = new Promise<Page | null>((resolve) => {
+    timer = setTimeout(() => resolve(null), 30_000);
+    onPage = (aberta) => {
+      aberta.on("dialog", (dialog) => {
+        if (ehAlertaProcessoNaoEncontrado(dialog.message())) naoEncontrado = true;
+        void dialog.dismiss().catch(() => undefined);
+      });
+      resolve(aberta);
+    };
+    context.on("page", onPage);
+  });
+
+  let popup: Page | null;
+  try {
+    await page.evaluate(`${fn}(${JSON.stringify(numeroCnj.replace(/\D/g, ""))})`);
+    popup = await popupAberto;
+  } finally {
+    clearTimeout(timer);
+    context.off("page", onPage);
+  }
+  if (!popup) {
+    throw new PjeError("PJE_INTERFACE_CHANGED", "A pesquisa rápida do PJe não abriu a janela dos autos no tempo esperado.", { grau, numeroCnj });
+  }
+
+  const chegouAosAutos = await popup
+    .waitForURL(/listAutosDigitais\.seam/, { timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!chegouAosAutos) {
+    const fechada = popup.isClosed();
+    await popup.close().catch(() => undefined);
+    if (naoEncontrado) {
+      throw new PjeError(
+        "PROCESS_NOT_FOUND",
+        `Processo ${numeroCnj} não encontrado no PJe ${grau}º grau com o perfil ativo da sessão. Se ele existe, o perfil escolhido na autenticação talvez não o enxergue.`,
+        { grau, numeroCnj, perfilAtivo: await lerPerfilAtivo(session, grau) },
+      );
+    }
+    throw new PjeError("PJE_INTERFACE_CHANGED", "A pesquisa rápida não levou aos autos digitais.", { grau, numeroCnj, popupFechada: fechada });
+  }
+  if (!mesmaBase(popup.url(), env.baseUrl)) {
+    await popup.close().catch(() => undefined);
+    throw new PjeError("PJE_INTERFACE_CHANGED", "A pesquisa rápida levou a um endereço fora do domínio esperado.", {
+      grau,
+      numeroCnj,
+      esperadoPrefixo: env.baseUrl,
+    });
+  }
+  return popup;
+}
+
+/**
+ * Abre os autos digitais do processo.
+ *
+ * Os autos abrem num popup (pesquisa rápida) e é essa a `page` devolvida — quem consome deve usar
+ * sempre `AutosDigitaisAbertos.page`, nunca `session.page`. Só no fallback do 1º grau
+ * (`enderecoAutos`) a navegação ocorre na `page` da sessão.
  *
  * Substitui o antigo gate booleano `authenticatedSelectors.inspected`: em vez de uma flag que nunca
  * se atualizava, o sinal de "interface mudou" passa a ser a ausência dos elementos esperados.
@@ -225,17 +311,27 @@ function comAba(url: string): string {
  * `baixarInteiroTeor`.
  */
 export async function abrirAutosDigitais(session: PjeSession, numeroCnj: string, grau: Grau): Promise<AutosDigitaisAbertos> {
-  const { page } = session;
-  const timeline = page.locator(authenticatedSelectors.autosDigitais.timelineForm);
+  let page = session.page;
 
   // O Seam ocasionalmente joga a primeira navegação em `error.seam`. Uma segunda tentativa, com um
   // `ca` recém-resolvido, foi suficiente em todos os casos observados.
   const MAX_TENTATIVAS = 2;
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
-    const endereco = comAba(await resolverEnderecoAutos(session, numeroCnj, grau));
-    await page.goto(endereco, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    // A pesquisa rápida é o caminho primário nos dois graus: o `enderecoAutos` do 1º grau responde 204
+    // de forma intermitente e isso vira um falso "não encontrado". Já o "não encontrado" da pesquisa
+    // rápida é o alerta do próprio PJe, então é definitivo e não cai no fallback.
+    try {
+      page = await abrirPorPesquisaRapida(session, numeroCnj, grau);
+    } catch (error) {
+      if (grau === "2" || !(error instanceof PjeError) || error.code !== "PJE_INTERFACE_CHANGED") throw error;
+      log("warn", "Pesquisa rápida indisponível no 1º grau; usando enderecoAutos", { numeroCnj });
+      page = session.page;
+      const endereco = comAba(await resolverEnderecoAutos(session, numeroCnj, grau));
+      await page.goto(endereco, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    }
 
-    const carregou = await timeline
+    const carregou = await page
+      .locator(authenticatedSelectors.autosDigitais.timelineForm)
       .first()
       .waitFor({ state: "attached", timeout: 30_000 })
       .then(() => true)
@@ -257,6 +353,8 @@ export async function abrirAutosDigitais(session: PjeSession, numeroCnj: string,
       tentativa,
       url: limparUrlAutos(page.url()),
     });
+    // No 2º grau cada tentativa abre um popup novo; o da tentativa que falhou não pode ficar pendurado.
+    if (page !== session.page) await page.close().catch(() => undefined);
   }
 
   let idProcesso: string | undefined;

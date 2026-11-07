@@ -76,6 +76,44 @@ export async function detectAuthenticated(page: Page, grau: Grau): Promise<boole
   return !hasLoginField;
 }
 
+/** Perfil (papel + localização) ativo na sessão. Só campos não identificadores: sem nome, login ou id do usuário. */
+export interface PerfilAtivo {
+  papel?: string;
+  cargo?: string;
+  idPapel?: number;
+  idOrgaoJulgador?: number;
+  idOrgaoJulgadorColegiado?: number;
+  idLocalizacaoFisica?: number;
+  visualizaSigiloso?: boolean;
+}
+
+/**
+ * Lê o perfil ativo da sessão em `usuario/currentUser`. O perfil é estado do servidor preso ao
+ * JSESSIONID: quem escolheu a localização no login é quem determina quais processos a sessão enxerga.
+ * É informativo — qualquer falha devolve `undefined` em vez de derrubar quem chamou.
+ */
+export async function lerPerfilAtivo(session: PjeSession, grau: Grau): Promise<PerfilAtivo | undefined> {
+  try {
+    const url = `${getPjeEnvironment(grau).baseUrl}/seam/resource/rest/pje-legacy/usuario/currentUser`;
+    const response = await session.context.request.get(url, { timeout: 15_000 });
+    if (!response.ok()) return undefined;
+    const dados = (await response.json()) as Record<string, unknown>;
+    const texto = (valor: unknown) => (typeof valor === "string" && valor.trim() ? valor.trim() : undefined);
+    const numero = (valor: unknown) => (typeof valor === "number" ? valor : undefined);
+    return {
+      papel: texto(dados.descricaoPapel),
+      cargo: texto(dados.descricaoCargo),
+      idPapel: numero(dados.idPapel),
+      idOrgaoJulgador: numero(dados.idOrgaoJulgador),
+      idOrgaoJulgadorColegiado: numero(dados.idOrgaoJulgadorColegiado),
+      idLocalizacaoFisica: numero(dados.idLocalizacaoFisica),
+      visualizaSigiloso: typeof dados.visualizaSigiloso === "boolean" ? dados.visualizaSigiloso : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function requireAuthenticated(grau: Grau): Promise<PjeSession> {
   const session = await launchSession(grau, true);
   const valid = await detectAuthenticated(session.page, grau).catch((error: unknown) => {
