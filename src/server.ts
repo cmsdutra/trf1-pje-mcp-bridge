@@ -10,7 +10,6 @@ import { listarDocumentosSchema, listarDocumentosTool } from "./tools/listar-doc
 import { baixarDocumentoSchema, baixarDocumentoTool } from "./tools/baixar-documento.js";
 import { baixarInteiroTeorSchema, baixarInteiroTeorTool } from "./tools/baixar-inteiro-teor.js";
 import { statusAutenticacao, statusAutenticacaoSchema } from "./tools/status-autenticacao.js";
-import { runManualAuthentication } from "./pje/auth.js";
 
 const server = new McpServer({
   name: config.name,
@@ -55,12 +54,8 @@ registerJsonTool("listar_documentos", "Lista documentos do processo acessíveis 
 registerJsonTool("baixar_documento", "Baixa um documento acessível do processo preservando o arquivo original quando disponível.", baixarDocumentoSchema, baixarDocumentoTool);
 registerJsonTool("baixar_inteiro_teor", "Baixa todos os documentos acessíveis do processo em diretório exclusivo e gera manifest.json.", baixarInteiroTeorSchema, baixarInteiroTeorTool);
 registerJsonTool("status_autenticacao", "Informa se há storageState salvo e se a sessão parece válida, sem expor cookies ou tokens.", statusAutenticacaoSchema, statusAutenticacao);
-registerJsonTool(
-  "autenticar",
-  "Abre Chromium visível para autenticação manual e salva storageState. Não automatiza credenciais, MFA, CAPTCHA ou certificado.",
-  { grau: z.enum(["1", "2"]).default("1") },
-  async ({ grau }) => runManualAuthentication(grau as "1" | "2"),
-);
+// A autenticação manual NÃO é exposta como tool MCP: ela lê o terminal interativo, mas o stdin
+// do servidor é o canal JSON-RPC do protocolo, e abriria um navegador a pedido do LLM. Use `npm run auth`.
 
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();

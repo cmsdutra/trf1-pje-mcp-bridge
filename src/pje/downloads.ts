@@ -1,11 +1,10 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import type { APIResponse } from "playwright";
 import { config } from "../config.js";
 import type { DocumentoProcesso, DownloadDocumentoResultado, ManifestDocumento, ManifestInteiroTeor, ProcessoMetadata } from "../types.js";
 import { assertValidCnj } from "../utils/cnj.js";
 import { PjeError } from "../utils/errors.js";
-import { ensureDirInsideBase, nextAvailableFilePath, sanitizeFileName, writeJsonFile } from "../utils/filesystem.js";
+import { ensureDirInsideBase, sanitizeFileName, writeFileExclusive } from "../utils/filesystem.js";
 import { log } from "../utils/logger.js";
 import { AUTH_INSTRUCTIONS, closeSession, requireAuthenticated, type PjeSession } from "./client.js";
 import { abrirAutosDigitais, extrairCabecalho, extrairTimeline } from "./autos.js";
@@ -13,6 +12,9 @@ import { extensaoParaContentType, mapCabecalhoParaMetadata, mapTimelineParaDocum
 import { authenticatedSelectors } from "./selectors.js";
 import { getPjeEnvironment, type Grau } from "./urls.js";
 import { sortDocumentsByProcessOrder } from "./documents.js";
+
+/** `idProcessoDocumento` do PJe é numérico; qualquer outra coisa iria crua para o caminho da URL. */
+export const DOCUMENTO_ID_RE = /^\d{1,20}$/;
 
 export function makeDownloadFileName(documento: DocumentoProcesso, extension = ".pdf"): string {
   const base = sanitizeFileName(documento.nome || documento.tipo || "documento");
@@ -89,6 +91,9 @@ export async function baixarDocumentoComSessao(
   documento?: DocumentoProcesso,
   idProcesso?: string,
 ): Promise<DownloadDocumentoResultado> {
+  if (!DOCUMENTO_ID_RE.test(documentoId) || (idProcesso !== undefined && !DOCUMENTO_ID_RE.test(idProcesso))) {
+    throw new PjeError("INVALID_INPUT", "Identificador de documento/processo inválido.", { field: "documento_id" });
+  }
   const tentativas = urlsDeDownload(grau, documentoId, idProcesso);
   let ultimoStatus = 0;
 
@@ -131,8 +136,8 @@ export async function baixarDocumentoComSessao(
     const nomeArquivo = documento
       ? makeDownloadFileName(documento, extensao)
       : `${sanitizeFileName(`documento_${documentoId}`)}${extensao}`;
-    const caminhoLocal = await nextAvailableFilePath(destinoDir, nomeArquivo);
-    await fs.writeFile(caminhoLocal, corpo, { mode: 0o600 });
+    // `wx`: nunca sobrescreve nem segue symlink; em colisão usa o próximo sufixo.
+    const caminhoLocal = await writeFileExclusive(destinoDir, nomeArquivo, corpo);
 
     const metadados: DocumentoProcesso = documento ?? {
       indice: 0,
@@ -163,8 +168,8 @@ export async function baixarDocumento(
   diretorioDestino?: string,
 ): Promise<DownloadDocumentoResultado> {
   assertValidCnj(numeroProcesso);
-  if (!documentoId.trim()) {
-    throw new PjeError("INVALID_INPUT", "documento_id é obrigatório.", { field: "documento_id" });
+  if (!DOCUMENTO_ID_RE.test(documentoId.trim())) {
+    throw new PjeError("INVALID_INPUT", "documento_id deve ser numérico (idProcessoDocumento).", { field: "documento_id" });
   }
   const baseDir = diretorioDestino ? path.resolve(config.downloadDir, diretorioDestino) : config.downloadDir;
   const destinoDir = await ensureDirInsideBase(config.downloadDir, path.relative(config.downloadDir, baseDir));
@@ -278,6 +283,6 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
   });
   // `writeJsonFile` grava com flag `wx` (nunca sobrescreve). Numa segunda coleta do mesmo processo
   // o manifesto anterior é preservado e este vira `manifest-1.json`.
-  await writeJsonFile(await nextAvailableFilePath(processDir, "manifest.json"), manifest);
+  await writeFileExclusive(processDir, "manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }

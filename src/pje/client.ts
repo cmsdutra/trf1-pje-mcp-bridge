@@ -29,7 +29,7 @@ export async function launchSession(grau: Grau, headless = config.headless): Pro
     throw new PjeError("SESSION_MISSING", `Sessão PJe não encontrada. ${AUTH_INSTRUCTIONS}`);
   }
   const env = getPjeEnvironment(grau);
-  const browser = await chromium.launch({ headless });
+  const browser = await chromium.launch({ headless, chromiumSandbox: config.chromiumSandbox });
   const context = await browser.newContext({
     storageState: config.storageStatePath,
     acceptDownloads: true,

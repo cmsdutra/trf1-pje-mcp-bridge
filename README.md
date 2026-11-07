@@ -98,8 +98,11 @@ Copie `.env.example` para `.env` se quiser sobrescrever padrões:
 PJE_DOWNLOAD_DIR=
 PJE_STORAGE_STATE_PATH=
 PJE_HEADLESS=true
+PJE_CHROMIUM_SANDBOX=true
 LOG_LEVEL=info
 ```
+
+O `.env` é lido **somente da raiz do pacote** (nunca do diretório atual) e apenas essas chaves são aceitas; variáveis do ambiente do processo (por exemplo, o bloco `env` do cliente MCP) têm precedência. O sandbox do Chromium fica ligado; use `PJE_CHROMIUM_SANDBOX=false` apenas em containers que o exijam.
 
 Sem sobrescrita, o MCP usa diretórios persistentes do usuário:
 
@@ -214,7 +217,6 @@ O servidor MCP usa `stdio`.
 ## Tools MCP
 
 - `status_autenticacao`: informa se há sessão salva, se parece válida, grau verificado e se precisa de nova autenticação.
-- `autenticar`: abre Chromium visível para autenticação manual. Para uso operacional, prefira `npm run auth`.
 - `consultar_processo`: valida número CNJ, abre os autos digitais e devolve classe, assunto, órgão julgador, partes e representantes, data de distribuição, `idProcesso` interno e os demais detalhes do cabeçalho.
 - `listar_documentos`: valida número CNJ, carrega a timeline completa dos autos digitais e devolve os documentos em ordem cronológica (movimentos sem documento anexado são descartados; anexos vêm junto do documento principal).
 - `baixar_documento`: valida entrada, protege o diretório de destino e baixa um documento pelo `documento_id` (o `idProcessoDocumento` devolvido por `listar_documentos`).
@@ -244,6 +246,8 @@ sobrescrito: numa segunda coleta do mesmo processo, o manifesto anterior é pres
 `manifest-1.json`, e arquivos com nome repetido ganham sufixo `-1`, `-2`, ...
 
 ## Segurança
+
+A autenticação é feita apenas pelo CLI (`npm run auth`); ela não é exposta como tool MCP porque depende do terminal interativo e o `stdin` do servidor é o canal do protocolo. `documento_id` precisa ser numérico, e gravações de download usam criação exclusiva (`wx`) e checagem de `realpath`, de modo que symlinks não conseguem desviar arquivos para fora do diretório autorizado.
 
 Este MCP reproduz somente operações que o usuário autenticado poderia executar pela interface do PJe. Ele não implementa bypass de autenticação, CAPTCHA, MFA, certificado digital, segredo de justiça ou controle de acesso. Cookies, tokens, headers de autenticação, credenciais e `storageState` nunca são retornados por tools MCP nem registrados em logs.
 
