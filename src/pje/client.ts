@@ -114,8 +114,32 @@ export async function lerPerfilAtivo(session: PjeSession, grau: Grau): Promise<P
   }
 }
 
+/**
+ * Verificação rápida da sessão: uma chamada HTTP a `usuario/currentUser` (~0,3 s), contra ~4 s de
+ * `detectAuthenticated` (navegar até `login.seam` e esperar a rede ficar ociosa).
+ *
+ * Só `true` é conclusivo: 200 em JSON significa sessão ativa. Qualquer outra coisa (redirecionamento
+ * para o SSO, 401/403, resposta inesperada ou falha de rede) devolve `false`/`undefined` e quem chama
+ * deve confirmar pelo caminho completo, porque o `login.seam` consegue renovar a sessão em silêncio
+ * via SSO e esta chamada não — um "expirada" daqui não pode, sozinho, mandar o usuário reautenticar.
+ */
+export async function verificarSessaoRapida(session: Pick<PjeSession, "context">, grau: Grau): Promise<boolean | undefined> {
+  try {
+    const url = `${getPjeEnvironment(grau).baseUrl}/seam/resource/rest/pje-legacy/usuario/currentUser`;
+    const response = await session.context.request.get(url, { timeout: 15_000, maxRedirects: 0 });
+    const status = response.status();
+    if (status === 200 && (response.headers()["content-type"] ?? "").includes("json")) return true;
+    if ((status >= 300 && status < 400) || status === 401 || status === 403) return false;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function requireAuthenticated(grau: Grau): Promise<PjeSession> {
   const session = await launchSession(grau, true);
+  if ((await verificarSessaoRapida(session, grau)) === true) return session;
+
   // Exceção na verificação (timeout, rede) NÃO é sessão expirada: tenta de novo e, se persistir, avisa
   // que não deu para verificar, em vez de mandar o usuário reautenticar sem necessidade.
   let valid = false;
