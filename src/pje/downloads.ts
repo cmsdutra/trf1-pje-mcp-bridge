@@ -53,19 +53,21 @@ function urlsDeDownload(grau: Grau, documentoId: string, idProcesso?: string): s
  * documento faltando no manifesto — inaceitável para coleta de autos. Erros de rede/timeout e 5xx
  * são retentados; 4xx (não existe, sem permissão) não, porque não melhoram com repetição.
  *
- * O timeout cobre o download inteiro e cada tentativa recomeça do zero, então estouro de prazo
- * (que custa `downloadTimeoutMs`) é retentado só uma vez; falhas rápidas de rede, até 3 vezes.
+ * `downloadTimeoutMs` é o prazo TOTAL do documento (todas as tentativas somadas), para um arquivo
+ * travado não ocupar uma vaga do pool por múltiplos prazos. Cada tentativa recebe o que sobrou: um
+ * estouro de prazo esgota o orçamento e encerra; falhas rápidas de rede/5xx são retentadas até 3 vezes.
  */
 async function buscarComRetentativa(session: PjeSession, url: string, documentoId: string, grau: Grau): Promise<APIResponse> {
   const MAX = 3;
-  const MAX_TIMEOUTS = 2;
-  let timeouts = 0;
+  const prazoFinal = Date.now() + config.downloadTimeoutMs;
   let ultimoErro: unknown;
   let tentativa = 1;
   for (; tentativa <= MAX; tentativa++) {
     if (tentativa > 1) await new Promise((resolve) => setTimeout(resolve, tentativa * 2_000));
+    const restante = prazoFinal - Date.now();
+    if (restante <= 0) break;
     try {
-      const response = await session.context.request.get(url, { timeout: config.downloadTimeoutMs });
+      const response = await session.context.request.get(url, { timeout: restante });
       if (response.status() >= 500 && tentativa < MAX) {
         log("warn", "PJe respondeu 5xx no download; tentando novamente", { documentoId, status: response.status(), tentativa });
         continue;
@@ -74,7 +76,6 @@ async function buscarComRetentativa(session: PjeSession, url: string, documentoI
     } catch (error) {
       ultimoErro = error;
       log("warn", "Falha de rede no download; tentando novamente", { documentoId, tentativa, erro: String(error).slice(0, 200) });
-      if (error instanceof Error && error.name === "TimeoutError" && ++timeouts >= MAX_TIMEOUTS) break;
     }
   }
   throw new PjeError("DOWNLOAD_FAILED", `Falha de rede ao baixar o documento ${documentoId} após ${Math.min(tentativa, MAX)} tentativa(s).`, {

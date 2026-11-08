@@ -74,7 +74,7 @@ export const config = {
   maxBatchDocuments: parsePositiveInt(process.env.PJE_MAX_BATCH_DOCUMENTS, 1000),
   maxBatchBytes: parsePositiveInt(process.env.PJE_MAX_BATCH_BYTES, 2 * 1024 * 1024 * 1024),
   /**
-   * Prazo total (cabeçalho + corpo) de cada tentativa de download. O PJe entrega ~200 KB/s: 600 s
+   * Prazo total (cabeçalho + corpo, todas as tentativas somadas) de cada documento. O PJe entrega ~200 KB/s: 600 s
    * cobrem o teto de 100 MB por documento (um vídeo de 58 MB levou 313 s numa medição real).
    */
   downloadTimeoutMs: parsePositiveInt(process.env.PJE_DOWNLOAD_TIMEOUT_MS, 600_000),
