@@ -172,9 +172,14 @@ async function carregarTimelineCompleta(page: Page): Promise<void> {
       });
     });
     await page
+      // Função anônima sem funções internas: o `tsx` não injeta o auxiliar `__name`, que não existe
+      // no navegador. Seletor e alvo vão como argumento, não concatenados no código.
       .waitForFunction(
-        `(function(){var el=document.querySelector(${JSON.stringify(paginaAtualInput)});return el && Number(el.value) >= ${alvo};})()`,
-        undefined,
+        ({ seletor, minimo }) => {
+          const el = document.querySelector<HTMLInputElement>(seletor);
+          return el !== null && Number(el.value) >= minimo;
+        },
+        { seletor: paginaAtualInput, minimo: alvo },
         { timeout: 30_000 },
       )
       .catch(() => {
