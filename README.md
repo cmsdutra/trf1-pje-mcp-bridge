@@ -105,10 +105,12 @@ PJE_MAX_SESSIONS=2
 PJE_MAX_DOCUMENT_BYTES=104857600
 PJE_MAX_BATCH_DOCUMENTS=1000
 PJE_MAX_BATCH_BYTES=2147483648
+PJE_DOWNLOAD_TIMEOUT_MS=600000
+PJE_DOWNLOAD_CONCURRENCY=3
 LOG_LEVEL=info
 ```
 
-Limites de recursos: `PJE_MAX_SESSIONS` é o número de Chromiums simultâneos (as demais chamadas esperam na fila); `PJE_MAX_DOCUMENT_BYTES` é o teto por documento; `PJE_MAX_BATCH_DOCUMENTS` e `PJE_MAX_BATCH_BYTES` limitam uma coleta de `baixar_inteiro_teor` (acima de documentos, a chamada falha antes de baixar; acima de bytes, os restantes entram no manifesto como erro).
+Limites de recursos: `PJE_MAX_SESSIONS` é o número de Chromiums simultâneos (as demais chamadas esperam na fila); `PJE_MAX_DOCUMENT_BYTES` é o teto por documento; `PJE_MAX_BATCH_DOCUMENTS` e `PJE_MAX_BATCH_BYTES` limitam uma coleta de `baixar_inteiro_teor` (acima de documentos, a chamada falha antes de baixar; acima de bytes, os restantes entram no manifesto como erro). `PJE_DOWNLOAD_CONCURRENCY` (padrão 3; `1` = sequencial) é quantos documentos de uma coleta baixam ao mesmo tempo, o que torna a coleta 2 a 4 vezes mais rápida; com ele o teto de bytes é aproximado, podendo passar por até (concorrência − 1) documentos já em andamento. `PJE_DOWNLOAD_TIMEOUT_MS` (padrão 600000) é o prazo total de cada tentativa de download: o PJe entrega ~200 KB/s, e um vídeo de 58 MB levou ~313 s. Estouro de prazo é retentado uma vez; falha rápida de rede, até 3.
 
 O `.env` é lido **somente da raiz do pacote** (nunca do diretório atual) e apenas essas chaves são aceitas; variáveis do ambiente do processo (por exemplo, o bloco `env` do cliente MCP) têm precedência. O sandbox do Chromium fica ligado; use `PJE_CHROMIUM_SANDBOX=false` apenas em containers que o exijam.
 

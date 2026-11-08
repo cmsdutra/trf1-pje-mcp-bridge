@@ -6,6 +6,7 @@ import { assertValidCnj } from "../utils/cnj.js";
 import { PjeError } from "../utils/errors.js";
 import { ensureDirInsideBase, sanitizeFileName, writeFileExclusive } from "../utils/filesystem.js";
 import { log } from "../utils/logger.js";
+import { executarEmPool } from "../utils/pool.js";
 import { AUTH_INSTRUCTIONS, closeSession, requireAuthenticated, type PjeSession } from "./client.js";
 import { abrirAutosDigitais, extrairCabecalho, extrairTimeline } from "./autos.js";
 import { extensaoParaContentType, mapCabecalhoParaMetadata, mapTimelineParaDocumentos } from "./autos-parse.js";
@@ -51,14 +52,20 @@ function urlsDeDownload(grau: Grau, documentoId: string, idProcesso?: string): s
  * o timeout enquanto os vizinhos baixam em segundos. Sem retentativa, essa oscilação vira um
  * documento faltando no manifesto — inaceitável para coleta de autos. Erros de rede/timeout e 5xx
  * são retentados; 4xx (não existe, sem permissão) não, porque não melhoram com repetição.
+ *
+ * O timeout cobre o download inteiro e cada tentativa recomeça do zero, então estouro de prazo
+ * (que custa `downloadTimeoutMs`) é retentado só uma vez; falhas rápidas de rede, até 3 vezes.
  */
 async function buscarComRetentativa(session: PjeSession, url: string, documentoId: string, grau: Grau): Promise<APIResponse> {
   const MAX = 3;
+  const MAX_TIMEOUTS = 2;
+  let timeouts = 0;
   let ultimoErro: unknown;
-  for (let tentativa = 1; tentativa <= MAX; tentativa++) {
+  let tentativa = 1;
+  for (; tentativa <= MAX; tentativa++) {
     if (tentativa > 1) await new Promise((resolve) => setTimeout(resolve, tentativa * 2_000));
     try {
-      const response = await session.context.request.get(url, { timeout: 120_000 });
+      const response = await session.context.request.get(url, { timeout: config.downloadTimeoutMs });
       if (response.status() >= 500 && tentativa < MAX) {
         log("warn", "PJe respondeu 5xx no download; tentando novamente", { documentoId, status: response.status(), tentativa });
         continue;
@@ -67,9 +74,10 @@ async function buscarComRetentativa(session: PjeSession, url: string, documentoI
     } catch (error) {
       ultimoErro = error;
       log("warn", "Falha de rede no download; tentando novamente", { documentoId, tentativa, erro: String(error).slice(0, 200) });
+      if (error instanceof Error && error.name === "TimeoutError" && ++timeouts >= MAX_TIMEOUTS) break;
     }
   }
-  throw new PjeError("DOWNLOAD_FAILED", `Falha de rede ao baixar o documento ${documentoId} após ${MAX} tentativas.`, {
+  throw new PjeError("DOWNLOAD_FAILED", `Falha de rede ao baixar o documento ${documentoId} após ${Math.min(tentativa, MAX)} tentativa(s).`, {
     grau,
     documentoId,
     erro: String(ultimoErro),
@@ -270,9 +278,12 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
       );
     }
     let bytesTotais = 0;
-    for (const documento of documentos) {
+    // Downloads em paralelo (PJE_DOWNLOAD_CONCURRENCY). O teto de bytes é checado ao iniciar cada
+    // documento, então pode ser ultrapassado por até (concorrência − 1) documentos já em andamento.
+    // `executarEmPool` devolve as entradas na ordem da timeline, como no laço sequencial anterior.
+    const entradas = await executarEmPool(documentos, config.downloadConcurrency, async (documento): Promise<ManifestDocumento> => {
       if (bytesTotais >= config.maxBatchBytes) {
-        manifestDocs.push({
+        return {
           indice: documento.indice,
           identificador: documento.identificadorInterno,
           nomeOriginal: documento.nome,
@@ -281,8 +292,7 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
           metadados: documento.metadados,
           status: "erro",
           mensagemErro: `Limite de ${config.maxBatchBytes} bytes por coleta atingido (PJE_MAX_BATCH_BYTES).`,
-        });
-        continue;
+        };
       }
       try {
         const resultado = await baixarDocumentoComSessao(
@@ -295,7 +305,7 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
         );
         const bytes = resultado.metadados.metadados?.bytes;
         if (typeof bytes === "number") bytesTotais += bytes;
-        manifestDocs.push({
+        return {
           indice: documento.indice,
           identificador: documento.identificadorInterno,
           nomeOriginal: documento.nome,
@@ -304,9 +314,9 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
           data: documento.data,
           metadados: resultado.metadados.metadados,
           status: "baixado",
-        });
+        };
       } catch (error) {
-        manifestDocs.push({
+        return {
           indice: documento.indice,
           identificador: documento.identificadorInterno,
           nomeOriginal: documento.nome,
@@ -315,9 +325,10 @@ export async function baixarInteiroTeor(numeroProcesso: string, grau: Grau, dire
           metadados: documento.metadados,
           status: "erro",
           mensagemErro: error instanceof Error ? error.message : "Falha desconhecida.",
-        });
+        };
       }
-    }
+    });
+    manifestDocs.push(...entradas);
   } finally {
     await closeSession(session);
   }
