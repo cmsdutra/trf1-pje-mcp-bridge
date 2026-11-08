@@ -343,6 +343,48 @@ LOG_LEVEL = "error"
 
 Com `cwd = "."`, valores relativos como `PJE_DOWNLOAD_DIR = "Sandbox"` são resolvidos a partir da raiz do projeto que contém `.codex/config.toml`. Isso evita `PATH_TRAVERSAL` ao baixar para uma pasta de trabalho local. Se usar configuração por projeto, remova a seção global `[mcp_servers.pje-trf1]` de `~/.codex/config.toml` para evitar duplicidade.
 
+## Claude Code e Claude Desktop
+
+O servidor fala MCP por stdio, então qualquer cliente que execute `node dist/server.js` (ou o `npx` equivalente) serve. O login é sempre manual e fora do cliente: rode `npm run auth` (1º grau) ou `npm run auth -- 2` (2º grau) no terminal antes de usar as tools.
+
+### Claude Code (CLI e aba Code do app)
+
+Para clone local, com o caminho absoluto do `dist/server.js` (rode `npm run build` antes e depois de qualquer alteração no código):
+
+```bash
+claude mcp add pje-trf1 --scope user -- node <caminho-do-clone>/dist/server.js
+```
+
+Para instalação direta do GitHub (fixe o commit, como na seção "Direto do GitHub"):
+
+```bash
+claude mcp add pje-trf1 --scope user -- npx -y -p github:naiberpontes/trf1-pje-mcp-bridge#<commit-sha> mcp-pje-trf1
+```
+
+`--scope user` vale para todos os projetos; `--scope project` grava num `.mcp.json` na raiz do projeto. `claude mcp list` mostra os servidores registrados. Abra uma sessão nova: as tools aparecem como `mcp__pje-trf1__consultar_processo`, `mcp__pje-trf1__listar_documentos` etc.
+
+### Claude Desktop (chat)
+
+Adicione a chave `mcpServers` ao `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claude_desktop_config.json`), preservando o restante do arquivo:
+
+```json
+{
+  "mcpServers": {
+    "pje-trf1": {
+      "command": "node",
+      "args": ["<caminho-do-clone>/dist/server.js"]
+    }
+  }
+}
+```
+
+Use barras normais (`/`) no caminho, que dispensam o escape do JSON. **Feche o Claude Desktop por completo (inclusive o ícone da bandeja) antes de editar**: o app regrava esse arquivo ao fechar e pode descartar a alteração se ela for feita com ele aberto. Depois abra o app de novo. Verificado no Windows em 07/11/2026.
+
+### Observações
+
+- Use um nome próprio (`pje-trf1`). Se você já tem outro servidor chamado `pje`, o mesmo nome faria um sobrescrever o outro.
+- Em caso de lentidão ou erro na inicialização no Windows, prefira o caminho absoluto do `node` e a instalação por clone local em vez de `npx`.
+
 ## Práticas Iniciais Recomendadas
 
 Comece verificando se o servidor está ativo no cliente:
